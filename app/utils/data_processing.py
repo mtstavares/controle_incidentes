@@ -11,7 +11,7 @@ def get_filtered_incidents_df(start_date, end_date, incident_type, status_str):
     if not start_date:
         start_date = '2024-06-03'
     if not end_date:
-        end_date = datetime.now().strftime('%Y-%m-%d')
+        end_date = datetime.now().strftime('%Y-%m-%dT%H:%M')
     
     # Consulta todos os incidentes e converte para DataFrame
     incidentes_query = Incidente.query.all()

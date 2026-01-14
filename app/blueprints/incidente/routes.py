@@ -72,19 +72,19 @@ def incidents_list():
     
     
     # Define o momento atual para calcular o tempo aberto
-    now = datetime.now(timezone.utc)
-
+    now = datetime.now()
+    print(f"Now UTC: {now}")
     # Itera sobre os incidentes para calcular e anexar o tempo aberto
     incidentes_com_tempo = []
     for inc in incidentes:
         # 1. Torna a data de abertura CONSCIENTE (aware) de UTC
         #    Isso resolve o "offset-naive" do start_date
-        start_date_aware = inc.start_date.replace(tzinfo=timezone.utc)
+        start_date_aware = inc.start_date.replace()
         
         # Se o incidente foi fechado, calcula a duração total (fechamento - abertura)
         if inc.end_date:
             # 2. Torna a data de fechamento CONSCIENTE (aware) de UTC
-            end_date_aware = inc.end_date.replace(tzinfo=timezone.utc)
+            end_date_aware = inc.end_date.replace()
             
             # Agora a subtração é válida: aware - aware
             duracao = end_date_aware - start_date_aware
@@ -486,6 +486,7 @@ def dashboard_incidentes_status():
     
     df_filtred, filtros_aplicados = get_filtered_incidents_df(start_date, end_date, incident_type, status_str)
     
+    print(df_filtred)
     ###########################################
     #GRAFICO ROSCA
       
@@ -505,6 +506,7 @@ def dashboard_incidentes_status():
     donut_chart_html = fig_donut.to_html(full_html=False)
     
     print(len(df_filtred))
+    print(datetime.now())
     
     total_incidents = len(df_filtred)
     total_incidentes_encerrados = len(df_filtred[df_filtred['status_incident'] == 'Encerrado'])
