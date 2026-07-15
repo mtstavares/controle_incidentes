@@ -1,99 +1,58 @@
 {% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
 
 {% block content %}
-<div class="container mt-4">
-    <h3>Incidentes Status</h3>
-    
-    <div class="card mb-4">
-        <div class="card-body">
-            <form method="GET" action="{{ url_for('incidente.dashboard_incidentes_status') }}" class="row g-3 align-items-end">
-                <div class="col-md-3">
-                    <label for="start_date" class="form-label">Data de Início</label>
-                    <input type="date" class="form-control" id="start_date" name="start_date" value="{{filtros_aplicados.start_date}}">
-                </div>
-                <div class="col-md-3">
-                    <label for="end_date" class="form-label">Data de Fim</label>
-                    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ filtros_aplicados.end_date }}">
-                </div>
-                <div class="col-md-3">
-                    <label for="incident_type" class="form-label">Tipo de Incidente</label>
-                    <select class="form-select" id="incident_type" name="incident_type">
-                        <option value="{{ filtros_aplicados.incident_type or 'Todos' }}">{{ filtros_aplicados.incident_type or 'Todos' }}</option>
-                        <option value="todos" >Todos</option>
-                        {% for type in incidents_types %}
-                            <option value="{{ type.tipo_incidente}}" >{{ type.tipo_incidente }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                
-                <div class="col-md-3 text-end">
-                    <button type="submit" class="btn btn-primary">Aplicar Filtros</button>
-                    <a href="{{ url_for('incidente.dashboard_incidentes_status') }}" class="btn btn-secondary">Limpar Filtros</a>
-                </div>
-                
-            </form>
-        </div>
-    </div>
-    
-    <div class="row d-flex justify-content-center text-center">
-        <div class="col-md-6 mb-3">
-            <div class="card">
-                <div class="card-body ">
-                    <h5 class="card-title">Total de incidentes registrados</h5>
-                    <h1>{{ totais.Total }}</h1>
-                    
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Incidentes Encerrados</h5>
-                    <h1>{{ totais.Resolvido }}</h1>
-                </div>
-            </div>
-        </div>
-    </div>
+{{ page_header('Dashboard por status', 'Indicadores de situação dos incidentes conforme filtros aplicados.') }}
 
-    <div class="row d-flex justify-content-center text-center">
-        
-        <div class="col-md-3 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Em Análise</h5>
-                    <h1>{{ totais['Em Análise'] }}</h1>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Em Mitigação</h5>
-                    <h1>{{ totais.Aguardando }}</h1>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Falso Positivo</h5>
-                    <h1>{{ totais['Falso Positivo'] }}</h1>
-                </div>
-            </div>
-        </div>
-        
+<section class="app-card mb-4" aria-labelledby="dashboard-filter-title">
+    <div class="app-card__header">
+        <h2 id="dashboard-filter-title" class="h5 mb-0">Filtros</h2>
     </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('incidente.dashboard_incidentes_status') }}" class="filter-grid">
+            <div class="span-3">
+                <label for="start_date" class="form-label">Data de início</label>
+                <input type="date" class="form-control" id="start_date" name="start_date" value="{{ filtros_aplicados.start_date }}">
+            </div>
+            <div class="span-3">
+                <label for="end_date" class="form-label">Data de fim</label>
+                <input type="date" class="form-control" id="end_date" name="end_date" value="{{ filtros_aplicados.end_date }}">
+            </div>
+            <div class="span-3">
+                <label for="incident_type" class="form-label">Tipo de incidente</label>
+                <select class="form-select" id="incident_type" name="incident_type">
+                    <option value="{{ filtros_aplicados.incident_type or 'todos' }}">{{ filtros_aplicados.incident_type or 'Todos' }}</option>
+                    <option value="todos">Todos</option>
+                    {% for type in incidents_types %}
+                        <option value="{{ type.tipo_incidente }}">{{ type.tipo_incidente }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end gap-2">
+                <button type="submit" class="btn btn-primary">Aplicar</button>
+                <a href="{{ url_for('incidente.dashboard_incidentes_status') }}" class="btn btn-outline-secondary">Limpar</a>
+            </div>
+        </form>
+    </div>
+</section>
 
-    <div class="row">
-            
-        <div class="col-md-12 mb-4">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Status Incidentes</h5>
-                    {{ donut_chart_html | safe }}
-                </div>
-            </div>
-        </div>
+<section class="metric-grid" aria-label="Totais por status">
+    <article class="metric-card"><p class="metric-card__label">Total</p><p class="metric-card__value">{{ totais.Total }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Encerrados</p><p class="metric-card__value">{{ totais.Resolvido }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Em análise</p><p class="metric-card__value">{{ totais['Em Análise'] }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Em mitigação</p><p class="metric-card__value">{{ totais.Aguardando }}</p></article>
+</section>
+
+<section class="app-card" aria-labelledby="status-chart-title">
+    <div class="app-card__header">
+        <h2 id="status-chart-title" class="h5 mb-0">Distribuição por status</h2>
     </div>
-</div>
+    <div class="app-card__body">
+        {% if totais.Total > 0 %}
+            {{ donut_chart_html | safe }}
+        {% else %}
+            {{ empty_state('Sem dados para o período', 'Cadastre incidentes ou altere os filtros para visualizar o gráfico.') }}
+        {% endif %}
+    </div>
+</section>
 {% endblock %}

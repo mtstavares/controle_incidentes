@@ -1,205 +1,179 @@
-
 {% extends "base.html" %}
+{% from 'components/macros.html' import page_header, field_hint %}
 
 {% block content %}
-<div class="container">
+{{ page_header(title, 'Preencha os dados essenciais do incidente. Campos marcados com asterisco são obrigatórios.') }}
 
-    <h2>{{ title }}</h2>
-
-    <form method="post">
-        
-        <div class="container ">
-            <div class="row">
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="status_incidente" class="form-label"><strong>Status</strong></label>        
-                        <select class="form-select" name="status_incidente" aria-label="Default select example" >
-                            <option selected>{{ incident.status_incident if incident else 'Selecione o Status' }}</option>
-                            
-                                {% for status in status_incident_list %}
-                                <option value="{{status.status}}">
-                                {{status.status}}
-                                </option>
-                                {% endfor %}
-                            
-                                               
-                    </select>
-
-                    </div>
-                </div>
-
-            </div>
-            <div class="row">
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="start_data_hora" class="form-label">Data/Hora Registro</label>
-                        <input type="datetime-local" class="form-control" 
-                        name="start_data_hora" 
-                        placeholder="Data/Hora Registro" 
-                        value="{{ incident.start_date if incident else '' }}" required>
-                    </div>
-                </div>
-                <div class="col">
-                    <label for="incident_type" class="form-label">Tipo de Incidente</label>        
-                    <select class="form-select" name="incident_type" aria-label="Default select example">
-                        <option selected>{{ incident.incident_type if incident else 'Selecione o Tipo de Incidente' }}</option>
-                        {% for tp_incidente in incidents_types %}
-                        <option value="{{tp_incidente.tipo_incidente}}">
-                        {{tp_incidente.tipo_incidente}}
-                        </option>
-                        {% endfor %}
-                                          
-                    </select>
-                </div>
-                
-            </div>
-        </div>
-
-        <div class="container">
-            <div class="row">
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="report_number" class="form-label">Num Relatorio</label>
-                        <input type="text" class="form-control" name="report_number" placeholder="Número do Relatorio Semanal ou Técnico" value="{{ incident.report_number if incident else '' }}" required>
-                    </div>
-
-                </div>
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="ticket_number" class="form-label">Nº Mensagem/Chamado</label>
-                        <input type="text" class="form-control" name="ticket_number" placeholder="Número da mensagem ou chamado" value="{{ incident.ticket_number if incident else '' }}"  >
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-        
-        
-        <div class="container">
-            <div class="row">
-                <div class="col">
-                    <label for="btl" class="form-label">Batalhão</label>        
-                    <select class="form-select" name="btl" id="btl_select" aria-label="Default select example" >
-                        <option selected>{{ incident.btl if incident else 'Selecione o Batalhão' }}</option>
-                        
-                        {% for unidade in unidades %}
-                        <option value="{{unidade.btl}}"
-                                data-cpa="{{unidade.cpa}}"
-                        >
-                        {{unidade.btl}}
-                        </option>
-                        {% endfor %}
-                        
-                                          
-                    </select>
-                </div>
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="cpa" class="form-label">CPA</label>
-                        <!-- Campo com preenchimento automatico -->
-                        <input type="text" class="form-control" name="cpa" id="cpa_input" placeholder="CPA / Grande Comando" value="{{ incident.cpa if incident else '' }}" readonly required>
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="mb-3">
-                        <label for="cia" class="form-label">Cia</label>
-                        <input type="text" class="form-control" name="cia" placeholder="Cia" value="{{ incident.cia if incident else '' }}" >
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-
-        <div class="container">
-            <div class="row">
-                <div class="col">
-                    <h3>Descrição do Incidente</h3>
-                    <div class="form-floating">
-                        
-                        <textarea class="form-control" placeholder="Descrição do Incidente -  Como? Quando? Quando? O que? Por que? medidas tomadas" style="height: 300px;" name="description" id="description" >{{ incident.description if incident else '' }}</textarea>
-                        <label for="description">Descrição do Incidente</label>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-    
-        <!-- Card Observações -->
-        <!-- <div class="container mt-2">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4>Observações</h4>
-                    <button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#addObsModal">
-                        Adicionar Observação
-                    </button>
-                </div>
-                <div class="card-body">
-                
-                        <ul class="list-group">
-                            
-                                <li class="list-group-item">
-                                    <p class="mb-1">texto_observacao </p>
-                                    <small class="text-muted">
-                                        Por autor_obs.username  em data_observacao
-                                    </small>
-                                </li>
-                            
-                        </ul>
-                    
-                        <p class="text-muted">Nenhuma observação foi adicionada ainda.</p>
-                    
-                </div>
-            </div>
-        
-
-            <div class="modal fade" id="addObsModal" tabindex="-1" aria-labelledby="addObsModalLabel" aria-hidden="true">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="addObsModalLabel">Adicionar Nova Observação</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <form method="POST" action="">
-                            <div class="modal-body">
-                                <div class="mb-3">
-                                    <label for="texto_observacao" class="form-label">Observação</label>
-                                    <textarea class="form-control" id="texto_observacao" name="texto_observacao" rows="5" required></textarea>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Salvar Observação</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div> -->
-        <!-- Card Observações -FIM -->
-
-    <div class="container mt-2">
-        
+<form method="post" enctype="multipart/form-data" data-prevent-duplicate data-incident-form>
+    <div class="incident-form-back mb-3">
         {% if edit_mode %}
-        <button type="submit" class="btn btn-primary mb-3"  id="btnSalvar" onclick="return confirm('Tem certeza de que deseja salvar as alterações?')">Salvar Alterações</button>
+        <a href="{{ url_for('incidente.incident_view', incident_id=incident.id) }}" class="btn btn-outline-secondary">Voltar</a>
         {% else %}
-        <button type="submit" class="btn btn-primary mb-3"  id="btnSalvar" >Registrar Incidente</button>
+        <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Cancelar</a>
         {% endif %}
     </div>
 
-    
+    <section class="app-card mb-4" aria-labelledby="classification-title">
+        <div class="app-card__header">
+            <div>
+                <h2 id="classification-title" class="h5 mb-1">Classificação</h2>
+                <p class="text-muted mb-0">Status, data de registro e tipo do incidente.</p>
+            </div>
+        </div>
+        <div class="app-card__body">
+            <div class="form-grid">
+                <div class="span-4">
+                    <label for="status_incidente" class="form-label">Status <span class="required-mark" aria-hidden="true">*</span></label>
+                    <select class="form-select" id="status_incidente" name="status_incidente" required aria-required="true">
+                        <option value="">Selecione o status</option>
+                        {% for status in status_incident_list %}
+                            <option value="{{ status.status }}" {% if incident and incident.status_incident == status.status %}selected{% endif %}>{{ status.status }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="span-4">
+                    <label for="registration_date" class="form-label">Data de registro <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="date" class="form-control" id="registration_date" name="registration_date" value="{{ incident.start_date.strftime('%Y-%m-%d') if incident and incident.start_date else data_atual.isoformat() }}" required aria-required="true">
+                </div>
+                <div class="span-4">
+                    <label for="incident_type" class="form-label">Tipo de incidente <span class="required-mark" aria-hidden="true">*</span></label>
+                    <select class="form-select" id="incident_type" name="incident_type" required aria-required="true">
+                        <option value="">Selecione o tipo</option>
+                        {% for tp_incidente in incidents_types %}
+                            <option value="{{ tp_incidente }}" {% if incident and incident.incident_type == tp_incidente %}selected{% endif %}>{{ tp_incidente }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </section>
 
-        
-    </form>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <section class="app-card mb-4" aria-labelledby="reference-title">
+        <div class="app-card__header">
+            <div>
+                <h2 id="reference-title" class="h5 mb-1">Referências</h2>
+                <p class="text-muted mb-0">Relatório, mensagem, chamado e unidade envolvida.</p>
+            </div>
+        </div>
+        <div class="app-card__body">
+            <div class="form-grid">
+                <div class="span-4">
+                    <label for="report_number" class="form-label">Nº relatório <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="text" class="form-control" id="report_number" name="report_number" placeholder="xxx/150/26" value="{{ incident.report_number if incident else '' }}" required aria-required="true">
+                    {{ field_hint('Relatório semanal ou técnico relacionado ao registro.') }}
+                </div>
+                <div class="span-4">
+                    <label for="message_number" class="form-label">Nº Mensagem</label>
+                    <input type="text" class="form-control" id="message_number" name="message_number" maxlength="100" value="{{ incident.message_number if incident and incident.message_number else '' }}">
+                </div>
+                <div class="span-4">
+                    <label for="ticket_number" class="form-label">Nº do chamado</label>
+                    <input type="text" class="form-control" id="ticket_number" name="ticket_number" maxlength="100" value="{{ incident.ticket_number if incident and incident.ticket_number else '' }}">
+                </div>
+                <div class="span-4">
+                    <label for="btl_select" class="form-label">Batalhão/unidade <span class="required-mark" aria-hidden="true">*</span></label>
+                    <select class="form-select" name="btl" id="btl_select" required aria-required="true">
+                        <option value="">Selecione a unidade</option>
+                        {% for unidade in unidades %}
+                            <option value="{{ unidade.btl }}" data-cpa="{{ unidade.cpa }}" {% if incident and incident.btl == unidade.btl %}selected{% endif %}>{{ unidade.btl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="span-4">
+                    <label for="cpa_input" class="form-label">CPA/Grande comando <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="text" class="form-control" name="cpa" id="cpa_input" value="{{ incident.cpa if incident else '' }}" readonly required aria-required="true">
+                    {{ field_hint('Preenchido automaticamente pela unidade selecionada.') }}
+                </div>
+                <div class="span-4">
+                    <label for="cia" class="form-label">Companhia</label>
+                    <input type="text" class="form-control" id="cia" name="cia" value="{{ incident.cia if incident else '' }}">
+                </div>
+            </div>
+        </div>
+    </section>
 
+    <section class="app-card mb-4" aria-labelledby="description-title">
+        <div class="app-card__header">
+            <div>
+                <h2 id="description-title" class="h5 mb-1">Descrição</h2>
+                <p class="text-muted mb-0">Registre contexto, impacto, ações tomadas, evidências e próximos passos.</p>
+            </div>
+        </div>
+        <div class="app-card__body">
+            <label for="description_editor" class="form-label">Descrição do incidente <span class="required-mark" aria-hidden="true">*</span></label>
+            <div class="rich-editor" data-rich-editor data-attachment-dropzone>
+                <div class="rich-editor__toolbar" role="toolbar" aria-label="Ferramentas de formatação">
+                    <div class="rich-editor__group" aria-label="Fonte">
+                        <select class="form-select form-select-sm" data-editor-font aria-label="Fonte">
+                            <option value="">Fonte</option>
+                            <option value="Arial">Arial</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Courier New">Courier</option>
+                        </select>
+                        <select class="form-select form-select-sm" data-editor-size aria-label="Tamanho">
+                            <option value="">Tamanho</option>
+                            <option value="2">Pequeno</option>
+                            <option value="3">Normal</option>
+                            <option value="5">Grande</option>
+                            <option value="7">Enorme</option>
+                        </select>
+                        <button type="button" class="icon-button" data-editor-command="bold" aria-label="Negrito"><strong>B</strong></button>
+                        <button type="button" class="icon-button" data-editor-command="italic" aria-label="Itálico"><em>I</em></button>
+                        <button type="button" class="icon-button" data-editor-command="underline" aria-label="Sublinhado"><u>U</u></button>
+                        <button type="button" class="icon-button" data-editor-command="strikeThrough" aria-label="Tachado"><s>S</s></button>
+                        <input type="color" data-editor-forecolor aria-label="Cor da letra">
+                        <input type="color" data-editor-backcolor aria-label="Cor do fundo">
+                    </div>
+                    <div class="rich-editor__group" aria-label="Parágrafo">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="justifyLeft">Esq.</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="justifyCenter">Centro</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="justifyRight">Dir.</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="insertUnorderedList">Lista</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="undo">Desfazer</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-command="redo">Refazer</button>
+                    </div>
+                </div>
+                <div id="description_editor" class="rich-editor__surface" contenteditable="true" role="textbox" aria-multiline="true" aria-describedby="description_help" data-editor-surface>{% if incident and incident.description_plain_text %}{{ incident.description|safe }}{% elif incident %}{{ incident.description }}{% endif %}</div>
+                <textarea class="visually-hidden" name="description" id="description" required aria-required="true" data-editor-input>{{ incident.description if incident else '' }}</textarea>
+            </div>
+            <p id="description_help" class="field-hint">Use a barra de ferramentas para formatar. Atalhos comuns como Ctrl+B, Ctrl+I e Ctrl+Z são suportados pelo navegador.</p>
+
+            <div class="attachment-dropzone mt-4" data-attachment-dropzone>
+                <div>
+                    <h3 class="h6 mb-1">Anexos</h3>
+                    <p class="text-muted mb-2">Arraste arquivos para esta área ou selecione no computador. PDF, imagens, Word e Excel. Máximo de 20 MB por arquivo.</p>
+                    <input class="form-control" type="file" id="incident_attachments" name="incident_attachments" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx" data-attachment-input aria-describedby="attachments_help">
+                    <p id="attachments_help" class="field-hint">Os arquivos são salvos como anexos, nunca como base64 dentro da descrição.</p>
+                </div>
+                <div class="attachment-dropzone__hint" aria-hidden="true">Solte para adicionar como anexo</div>
+                <ul class="attachment-list" data-attachment-list aria-live="polite"></ul>
+            </div>
+
+            {% if incident and incident.attachments %}
+            <div class="saved-attachments mt-4">
+                <h3 class="h6">Anexos salvos</h3>
+                <ul class="attachment-list">
+                    {% for attachment in incident.attachments %}
+                    {% set ext = attachment.original_filename.rsplit('.', 1)[-1]|lower %}
+                    <li class="attachment-item">
+                        <span class="attachment-file-icon attachment-file-icon--{{ ext }}" aria-hidden="true">{{ ext|upper }}</span>
+                        <span class="attachment-item__name">{{ attachment.original_filename }}</span>
+                        <span class="attachment-item__meta">{{ (attachment.file_size / 1024)|round(1) }} KB</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+        <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Cancelar</a>
+        {% if edit_mode %}
+            <button type="submit" class="btn btn-primary" data-loading-text="Salvando..." onclick="return confirm('Tem certeza de que deseja salvar as alterações?')">Salvar alterações</button>
+        {% else %}
+            <button type="submit" class="btn btn-primary" data-loading-text="Registrando...">Registrar incidente</button>
+        {% endif %}
+    </div>
+</form>
 {% endblock %}
-
-
-
-

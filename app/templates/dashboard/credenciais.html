@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Dashboard de credenciais comprometidas', 'Área preparada para indicadores e gráficos do futuro módulo de credenciais.') }}
+
+<section class="metric-grid" aria-label="Indicadores futuros de credenciais">
+    <article class="metric-card">
+        <p class="metric-card__label">Total monitorado</p>
+        <p class="metric-card__value">--</p>
+    </article>
+    <article class="metric-card">
+        <p class="metric-card__label">Em análise</p>
+        <p class="metric-card__value">--</p>
+    </article>
+    <article class="metric-card">
+        <p class="metric-card__label">Mitigadas</p>
+        <p class="metric-card__value">--</p>
+    </article>
+    <article class="metric-card">
+        <p class="metric-card__label">Fontes</p>
+        <p class="metric-card__value">--</p>
+    </article>
+</section>
+
+<section class="app-card" aria-labelledby="cred-dashboard-title">
+    <div class="app-card__header">
+        <h2 id="cred-dashboard-title" class="h5 mb-0">Gráficos</h2>
+    </div>
+    <div class="app-card__body">
+        {{ empty_state('Dashboard em desenvolvimento', 'O módulo de dashboard de credenciais comprometidas está em desenvolvimento. Nenhuma estatística fictícia foi gerada.') }}
+    </div>
+</section>
+{% endblock %}

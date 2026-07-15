@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Gestão de usuários', 'Visualize, pesquise, crie usuários e altere perfis administrativos com auditoria.') }}
+
+<section class="app-card mb-4" aria-labelledby="users-actions-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="users-actions-title" class="h5 mb-1">Usuários cadastrados</h2>
+            <p class="text-muted mb-0">Pesquise por nome, RE, e-mail ou perfil.</p>
+        </div>
+        <a class="btn btn-primary" href="{{ url_for('users.register') }}">Criar usuário</a>
+    </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('admin.gestao_usuarios') }}" role="search" data-live-search>
+            <label for="q" class="form-label">Pesquisar usuários</label>
+            <div class="input-group">
+                <input class="form-control" id="q" name="q" value="{{ q }}" type="search" placeholder="Nome, RE, e-mail ou perfil" autocomplete="off" data-live-search-input>
+                {% if q %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('admin.gestao_usuarios') }}">Limpar</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</section>
+
+{% if usuarios %}
+<section class="user-card-grid" aria-label="Usuários">
+    {% for usuario in usuarios %}
+    <article class="app-card user-card">
+        <div class="app-card__body">
+            <div class="d-flex justify-content-between gap-3 align-items-start mb-3">
+                <div class="user-card__email-row">
+                    <h2 class="h5 mb-1">{{ usuario.name }}</h2>
+                    <p class="text-muted mb-0">RE: {{ usuario.username }}</p>
+                </div>
+                <span class="app-badge app-badge--profile-{{ usuario.profile|lower }}">{{ usuario.profile }}</span>
+            </div>
+            <dl class="record-meta">
+                <div>
+                    <dt>E-mail</dt>
+                    <dd class="user-email" title="{{ usuario.email }}">{{ usuario.email }}</dd>
+                </div>
+            </dl>
+            <form method="POST" action="{{ url_for('admin.alterar_perfil_usuario', user_id=usuario.id) }}" data-prevent-duplicate class="user-card__profile-form">
+                <label for="profile_{{ usuario.id }}" class="form-label">Editar perfil</label>
+                <div class="d-flex flex-column gap-2">
+                    <select class="form-select" id="profile_{{ usuario.id }}" name="profile" required>
+                        {% for perfil in perfis %}
+                            <option value="{{ perfil }}" {% if usuario.profile == perfil %}selected{% endif %}>{{ perfil }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-outline-secondary" type="submit" data-loading-text="Salvando..." onclick="return confirm('Confirma a alteração de perfil deste usuário?')">Salvar perfil</button>
+                </div>
+            </form>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+
+{% if pagination.pages > 1 %}
+<nav class="mt-4" aria-label="Paginação de usuários">
+    <ul class="pagination flex-wrap">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('admin.gestao_usuarios', page=pagination.prev_num, q=q) }}">Anterior</a>
+        </li>
+        <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages }}</span></li>
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('admin.gestao_usuarios', page=pagination.next_num, q=q) }}">Próxima</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% else %}
+    {% if q %}
+        {{ empty_state('Nenhum usuário encontrado.', 'Nenhum cadastro corresponde ao termo pesquisado.', url_for('admin.gestao_usuarios'), 'Limpar pesquisa') }}
+    {% else %}
+        {{ empty_state('Nenhum usuário cadastrado.', 'Crie o primeiro usuário para liberar acesso ao sistema.', url_for('users.register'), 'Criar usuário') }}
+    {% endif %}
+{% endif %}
+{% endblock %}

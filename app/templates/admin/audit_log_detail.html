@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header %}
+
+{% block content %}
+{{ page_header('Detalhe do log de auditoria', 'Visualização administrativa de uma entrada imutável de auditoria.') }}
+
+<div class="mb-4">
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.audit_logs') }}">Voltar aos logs</a>
+</div>
+
+<section class="app-card mb-4" aria-labelledby="audit-detail-title">
+    <div class="app-card__header">
+        <h2 id="audit-detail-title" class="h5 mb-0">Evento #{{ log.id }}</h2>
+        <span class="app-badge app-badge--info">{{ log.acao }}</span>
+    </div>
+    <div class="app-card__body">
+        <div class="detail-grid">
+            <div class="detail-item"><span class="detail-item__label">Timestamp UTC</span><span class="detail-item__value">{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Usuário</span><span class="detail-item__value">{{ log.usuario_identificacao }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Resultado</span><span class="detail-item__value">{{ log.resultado }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Módulo</span><span class="detail-item__value">{{ log.modulo }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Endpoint</span><span class="detail-item__value">{{ log.endpoint or 'N/A' }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Método HTTP</span><span class="detail-item__value">{{ log.metodo_http or 'N/A' }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Entidade</span><span class="detail-item__value">{{ log.entidade or 'N/A' }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">ID afetado</span><span class="detail-item__value">{{ log.entidade_id or 'N/A' }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">IP</span><span class="detail-item__value">{{ log.ip_address or 'N/A' }}</span></div>
+        </div>
+    </div>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="audit-description-title">
+    <div class="app-card__header">
+        <h2 id="audit-description-title" class="h5 mb-0">Descrição</h2>
+    </div>
+    <div class="app-card__body">
+        <p class="mb-0">{{ log.descricao }}</p>
+    </div>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="audit-agent-title">
+    <div class="app-card__header">
+        <h2 id="audit-agent-title" class="h5 mb-0">User agent</h2>
+    </div>
+    <div class="app-card__body">
+        <p class="text-preserve mb-0">{{ log.user_agent or 'N/A' }}</p>
+    </div>
+</section>
+
+<section class="app-card" aria-labelledby="audit-changes-title">
+    <div class="app-card__header">
+        <h2 id="audit-changes-title" class="h5 mb-0">Alterações</h2>
+    </div>
+    <div class="app-card__body">
+        {% if log.alteracoes %}
+            <div class="app-table-wrap">
+                <table class="table app-table">
+                    <thead>
+                        <tr>
+                            <th>Campo</th>
+                            <th>Valor anterior</th>
+                            <th>Valor posterior</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for campo, valores in log.alteracoes.items() %}
+                        <tr>
+                            <td>{{ campo }}</td>
+                            <td class="text-preserve">{{ valores.anterior if valores.anterior is not none else 'N/A' }}</td>
+                            <td class="text-preserve">{{ valores.novo if valores.novo is not none else 'N/A' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">Este evento não possui alterações de campos auditáveis.</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

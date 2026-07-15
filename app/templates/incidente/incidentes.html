@@ -1,124 +1,87 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<div class="container">
-    
+<section class="page-heading" aria-labelledby="page-title">
+    <div>
+        <p class="eyebrow">DivCiber</p>
+        <h1 id="page-title">Incidentes de seguran?a</h1>
+        <p class="page-heading__subtitle">Consulte, filtre e acompanhe os incidentes cadastrados no sistema.</p>
+    </div>
+</section>
 
-    <div class="card mb-4">
-        <div class="card-body">
-            <h2 class="mb-4">{{ title }}</h2>
-            <div class="row mb-3 mx-auto">
-                    <div class="col-md-6">
-                        <a href="{{ url_for('incidente.new_incident') }}" class="btn btn-primary" action="url_for('incidente.new_incident')">Registrar novo incidente</a>
+<section class="app-card incident-registry" aria-labelledby="incident-registry-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="incident-registry-title" class="h5 mb-1">Registro de incidentes</h2>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <div class="incident-registry__toolbar">
+            {% if current_user.profile in ['Admin', 'User'] %}
+            <a class="btn btn-primary" href="{{ url_for('incidente.new_incident') }}">Registrar novo incidente</a>
+            {% endif %}
 
-                    </div>
-                    <div class="col-md-6 " >
-                        
-                        <form action="{{ url_for('incidente.search_incident') }}" method="GET" >
-                            <div class="input-group">
-                                
-                            </div>
-                            
-                            <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Pesquisar incidentes..." name="termo">
-                                <button class="btn btn-outline-secondary" type="submit">Pesquisar</button>
-                            </div>
-                        </form>
-                    </div>
+            <div class="incident-search">
+                <label for="global_incident_search" class="visually-hidden">Pesquisar em todos os dados dos incidentes</label>
+                <input
+                    type="search"
+                    id="global_incident_search"
+                    name="q"
+                    class="form-control"
+                    value="{{ q|default('') }}"
+                    placeholder="Pesquisar nos incidentes..."
+                    autocomplete="off"
+                    spellcheck="false"
+                    data-incident-search-input
+                >
             </div>
         </div>
     </div>
-    
-    <div class="card mb-4 ">
-        <div class="card-body ">
-            <h5 class="card-title">Filtros</h5>
-                <div class="row mb-3">
-                    <form class="row g-3 align-items-end " method="GET" action="{{ url_for('incidente.incidents_list') }}">
-                            <div class="col-md-3">
-                                <label for="status_filter" class="form-label">Status</label>
-                                <select class="form-select" id="status_filter" name="status_filter">
-                                    <option value="todos" {% if not status_filter or status_filter == 'todos' %}selected{% endif %}>Todos</option>
-                                    {% for status in status_options %}
-                                        <option value="{{ status[0] }}" {% if status_filter == status[0] %}selected{% endif %}>{{ status[0] }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label for="sort_by" class="form-label">Ordenar por</label>
-                                <select class="form-select" id="sort_by" name="sort_by">
-                                    <option value="start_date" {% if sort_by == 'start_date' %}selected{% endif %}>Data de Abertura</option>
-                                    <option value="incident_type" {% if sort_by == 'incident_type' %}selected{% endif %}>Tipo de Incidente</option>
-                                    <option value="report_number" {% if sort_by == 'report_number' %}selected{% endif %}>Nº Relatório</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label for="direction" class="form-label">Ordem</label>
-                                <select class="form-select" id="direction" name="direction">
-                                    <option value="desc" {% if direction == 'desc' %}selected{% endif %}>Do mais recente ao mais antigo</option>
-                                    <option value="asc" {% if direction == 'asc' %}selected{% endif %}>Do mais antigo ao mais recente</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3 ">
-                                <button type="submit" class="btn btn-primary flex-fill">Aplicar</button>
-                                <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-secondary">Limpar Filtros</a>
-                            </div>
+</section>
 
-                            
-                        </form>
-                </div>
+<section class="app-card mb-4" aria-labelledby="filters-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="filters-title" class="h5 mb-1">Filtros</h2>
+            <p class="text-muted mb-0">Refine os registros por status e ordena??o.</p>
         </div>
     </div>
-    
+    <div class="app-card__body">
+        <form class="filter-grid mb-4" method="GET" action="{{ url_for('incidente.incidents_list') }}" data-incident-filter-form>
+            <input type="hidden" name="q" value="{{ q|default('') }}" data-incident-search-hidden>
+            <div class="span-3">
+                <label for="status_filter" class="form-label">Status</label>
+                <select class="form-select" id="status_filter" name="status_filter">
+                    <option value="todos" {% if not status_filter or status_filter == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for status in status_options %}
+                        <option value="{{ status[0] }}" {% if status_filter == status[0] %}selected{% endif %}>{{ status[0] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="sort_by" class="form-label">Ordenar por</label>
+                <select class="form-select" id="sort_by" name="sort_by">
+                    <option value="start_date" {% if sort_by == 'start_date' %}selected{% endif %}>Data de abertura</option>
+                    <option value="incident_type" {% if sort_by == 'incident_type' %}selected{% endif %}>Tipo</option>
+                    <option value="report_number" {% if sort_by == 'report_number' %}selected{% endif %}>N? relat?rio</option>
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="direction" class="form-label">Ordem</label>
+                <select class="form-select" id="direction" name="direction">
+                    <option value="desc" {% if direction_filter == 'desc' %}selected{% endif %}>Mais recentes</option>
+                    <option value="asc" {% if direction_filter == 'asc' %}selected{% endif %}>Mais antigos</option>
+                </select>
+            </div>
+            <div class="span-3 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end gap-2">
+                <button type="submit" class="btn btn-primary">Aplicar</button>
+                <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Limpar</a>
+            </div>
+        </form>
+    </div>
+</section>
 
-    
-
-
-    <table class="table table-bordereds table-hover align-middle text-center">
-        <thead class="table-dark align-middle ">
-            <th>ID</th>
-            <th>Tipo de Incidente</th>
-            <th>Data abertura</th>
-            <th>Nº Relatório</th>
-            <th>Nº Ticket</th>
-            <th>CPA</th>
-            <th>BTL</th>
-            <th>Companhia</th>
-            <th>Status</th>
-            <th>Tempo desde abertura</th>
-            <th>Visualizar</th>
-            <!-- <th>Deletar</th> -->
-        </thead>
-        <tbody>
-            {% for incidente in incidentes %}
-                {% set row_class = '' %}
-                {% if incidente.status_incident == 'Encerrado' %}
-                    {% set row_class = 'table-success' %}
-                {% elif incidente.status_incident == 'Em Mitigação'  %}
-                    {% set row_class = 'table-danger' %}
-                {% elif incidente.status_incident == 'Em Análise' %}
-                    {% set row_class = 'table-warning' %}
-                {% endif %}
-            <tr class="{{ row_class }}">
-                <td>{{incidente.id}}</td>
-                <td>{{incidente.incident_type}}</td>
-                <td>{{incidente.start_date.strftime("%d/%m/%Y %H:%M")}}</td>
-                <td>{{incidente.report_number}}</td>
-                <td>{{incidente.ticket_number}}</td>
-                <td>{{incidente.cpa}}</td>
-                <td>{{incidente.btl}}</td>
-                <td>{{incidente.cia}}</td>
-                <td>{{incidente.status_incident}}</td>
-                <td>{{ incidente.tempo_aberto_formatado}}</td>
-                <td><a href="{{url_for('incidente.incident_view', incident_id=incidente.id)}}" class="btn btn-warning btn-sm">Visualizar</a></td>
-                <!-- <td><a href="" class="btn btn-danger btn-sm">Deletar</a></td> -->
-            {% endfor %}
-        </tbody>
-    </table>
+<div id="incident-results" aria-live="polite" aria-busy="false" data-incident-results>
+    {% include "incidente/_incident_list.html" %}
 </div>
-
-
-        
-        
-        
-
-
 {% endblock %}

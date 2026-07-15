@@ -1,13 +1,16 @@
 # app/__init__.py
 
-from flask import Flask
+from flask import Flask, abort, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from config import DevelopmentConfig, ProductionConfig # Importando as classes de configuração do arquivo config.py
-from flask_login import LoginManager, set_login_view # Importando o gerenciador de login
+from flask_login import LoginManager, current_user, set_login_view # Importando o gerenciador de login
 import hashlib
+import hmac
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import secrets
 from flask_login import LoginManager, set_login_view # Importando o gerenciador de login
 import hashlib
 
@@ -17,6 +20,7 @@ def hash(txt):
     
 db = SQLAlchemy()
 lm = LoginManager()
+migrate = Migrate()
 
 logging.basicConfig(level=logging.INFO, filename='app.log', format='%(asctime)s - %(levelname)s - %(message)s')
 def create_app(config_class=ProductionConfig):
@@ -24,7 +28,11 @@ def create_app(config_class=ProductionConfig):
     app = Flask(__name__) # Criando uma instância do Flask
     app.config.from_object(config_class) # Carregando a configuração da classe fornecida > Desenvolvimento ou Produção
     
+    os.makedirs(app.instance_path, exist_ok=True)
+    os.makedirs('logs', exist_ok=True)
+    
     db.init_app(app) # Inicializando o SQLAlchemy com a aplicação Flask
+    migrate.init_app(app, db)
     lm.init_app(app) # Inicializando o LoginManager com a aplicação Flask  
     # Carregando os blueprints
     from app.blueprints.main import main_bp # Importando o blueprint principal
@@ -36,6 +44,15 @@ def create_app(config_class=ProductionConfig):
     from app.blueprints.users import users_bp # Importando o blueprint usuários
     app.register_blueprint(users_bp) # Registrando o blueprint usuários com prefixo de URL
     
+    from app.blueprints.credenciais import credenciais_bp
+    app.register_blueprint(credenciais_bp)
+    
+    from app.blueprints.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    
+    from app.blueprints.admin import admin_bp
+    app.register_blueprint(admin_bp)
+    
     lm.login_view = 'users.login' # Definindo a rota de login
     lm.login_message = "Por favor, faça login para acessar o sistema." # Mensagem exibida quando o usuário não está autenticado
     
@@ -46,8 +63,44 @@ def create_app(config_class=ProductionConfig):
     #     return render_template('404.html'), 404
     
     
+    def get_csrf_token():
+        token = session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["_csrf_token"] = token
+        return token
+    
+    @app.context_processor
+    def inject_csrf_token():
+        return {"csrf_token": get_csrf_token}
+    
+    @app.before_request
+    def require_password_change():
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not app.testing:
+            sent_token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
+            expected_token = session.get("_csrf_token")
+            if not sent_token or not expected_token or not hmac.compare_digest(sent_token, expected_token):
+                abort(400)
+        
+        allowed_endpoints = {
+            "users.change_password",
+            "users.login",
+            "main.logout",
+            "static",
+        }
+        endpoint = request.endpoint or ""
+        if endpoint.endswith(".static"):
+            return None
+        if (
+            current_user.is_authenticated
+            and (getattr(current_user, "must_change_password", False) or getattr(current_user, "is_temp_password", False))
+            and endpoint not in allowed_endpoints
+        ):
+            return redirect(url_for("users.change_password"))
+        return None
+    
     # ====================================================================
-    # CONFIGURAÇÃO DO LOGGING
+    # CONFIGURA??O DO LOGGING
     # ====================================================================
 
     if not app.debug and not app.testing:
@@ -88,6 +141,18 @@ def create_app(config_class=ProductionConfig):
         
     # ====================================================================
     
+    
+    @app.errorhandler(403)
+    def forbidden(error):
+        return render_template('errors/error.html', title='Acesso negado', code=403, message='Você não tem permissão para acessar este recurso.'), 403
+    
+    @app.errorhandler(404)
+    def page_not_found(error):
+        return render_template('errors/error.html', title='Página não encontrada', code=404, message='A página solicitada não foi encontrada.'), 404
+    
+    @app.errorhandler(500)
+    def internal_error(error):
+        return render_template('errors/error.html', title='Erro interno', code=500, message='Não foi possível concluir a operação. Tente novamente mais tarde.'), 500
     
     return app # Retornando a instância da aplicação Flask
 

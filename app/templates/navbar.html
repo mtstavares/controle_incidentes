@@ -1,57 +1,58 @@
-<nav class="navbar navbar-expand-lg navbar-light text-white  " style="background-color: #155eca;" data-bs-theme="dark" >
-    <div class="container-fluid container text-white">
-        <a class="navbar-brand" href="{{ url_for('main.home')}}">
-            <img src="{{url_for('static', filename='img/logo_divciber.png')}}"  class="d-inline-block align-text-center" alt="Bootstrap" style="max-width: 150px; height: auto;">
-            Divciber
-        </a>
-       
-      <div class="collapse navbar-collapse text-white" id="navbarSupportedContent">
-        <ul class="navbar-nav me-auto mb-2 mb-lg-0 text-white">
-            <li class="nav-item">
-                <a class="nav-link " aria-current="page" href="{{ url_for('main.home')}}">Home</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('incidente.incidents_list')}}">Incidentes</a>
-            </li>
-            
-            <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    Dashboard
-                </a>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{{ url_for('incidente.dashboard_incidentes_cpa_btl')}}">Incidentes por CPA/BTL</a></li>
-                    <li><a class="dropdown-item" href="{{ url_for('incidente.dashboard_incidentes_status') }}">Status Incidentes</a></li>
-                    
-                </ul>
-            </li>
-            
-        </ul>
-        <ul class="navbar-nav" >
-                
-                {% if current_user.is_authenticated %}
-                <li class="nav-item">
-                    <a class="nav-link active" href="#">Olá, {{current_user.name}}</a>
-                </li>
-                {% if current_user.profile == 'Admin' %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('users.register') }}">Registro</a>
-                </li>
-                {% endif %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('main.logout') }}">| Sair</a>
-                </li>
-                {% else %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{  url_for('users.login')}}">Login</a>
-                </li>
-                
-                {% endif %}
-                
-                
-            </ul>
-        
-      </div>
+{% set endpoint = request.endpoint or '' %}
+<aside class="app-sidebar" id="appSidebar" aria-label="Navegação principal">
+    <a class="app-sidebar__brand" href="{{ url_for('main.home') }}">
+        <img class="app-logo" src="{{ url_for('static', filename='img/logo_divciber.jpg') }}" alt="Brasão da Divisão de Cibersegurança">
+        <span>
+            <span class="app-brand__name">DivCiber</span>
+            <span class="app-brand__meta">Controle de Incidentes</span>
+        </span>
+    </a>
+
+    <div class="sidebar-section">
+        <p class="sidebar-label">Operação</p>
+        <nav class="sidebar-nav">
+            <a class="sidebar-link" href="{{ url_for('main.home') }}" {% if endpoint == 'main.home' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">⌂</span>
+                <span>Home</span>
+            </a>
+            <a class="sidebar-link" href="{{ url_for('incidente.incidents_list') }}" {% if endpoint in ['incidente.incidents_list', 'incidente.search_incident', 'incidente.incident_view', 'incidente.new_incident', 'incidente.edit_incident'] %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">!</span>
+                <span>Incidentes de segurança</span>
+            </a>
+            <a class="sidebar-link" href="{{ url_for('credenciais.listar_credenciais') }}" {% if endpoint == 'credenciais.listar_credenciais' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">#</span>
+                <span>Credenciais comprometidas</span>
+            </a>
+        </nav>
     </div>
-  </nav>
 
+    <div class="sidebar-section">
+        <p class="sidebar-label">Inteligência</p>
+        <nav class="sidebar-nav">
+            <a class="sidebar-link" href="{{ url_for('incidente.dashboard_incidentes_cpa_btl') }}" {% if endpoint == 'incidente.dashboard_incidentes_cpa_btl' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">▥</span>
+                <span>Dashboard incidentes</span>
+            </a>
+            <a class="sidebar-link" href="{{ url_for('dashboard.dashboard_credenciais') }}" {% if endpoint == 'dashboard.dashboard_credenciais' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">◇</span>
+                <span>Dashboard credenciais</span>
+            </a>
+        </nav>
+    </div>
 
+    {% if current_user.is_authenticated and current_user.profile == 'Admin' %}
+    <div class="sidebar-section">
+        <p class="sidebar-label">Administração</p>
+        <nav class="sidebar-nav">
+            <a class="sidebar-link" href="{{ url_for('admin.gestao_usuarios') }}" {% if endpoint in ['admin.gestao_usuarios', 'users.register', 'admin.alterar_perfil_usuario'] %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">U</span>
+                <span>Gestão de usuários</span>
+            </a>
+            <a class="sidebar-link" href="{{ url_for('admin.audit_logs') }}" {% if endpoint in ['admin.audit_logs', 'admin.audit_log_detail'] %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">L</span>
+                <span>Logs de auditoria</span>
+            </a>
+        </nav>
+    </div>
+    {% endif %}
+</aside>

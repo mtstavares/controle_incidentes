@@ -8,11 +8,12 @@ from flask_login import UserMixin # Importando UserMixin para integração com F
 
 class User(UserMixin,db.Model):
     id = db.Column(db.Integer, primary_key=True) # ID do usuário
-    username = db.Column(db.String(100), unique=True, nullable=False) # Nome de usuário único
-    name = db.Column(db.String(100), unique=True, nullable=False) # Nome de usuário único
-    email = db.Column(db.String(100), unique=True, nullable=False) # Email do usuário único
+    username = db.Column(db.String(50), unique=True, nullable=False, index=True) # Nome de usuário único
+    name = db.Column(db.String(150), nullable=False) # Nome do usuário
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True) # Email do usuário único
     profile = db.Column(db.String(50), nullable=False) # Perfil do usuário (admin, user ou viewer)
     is_temp_password = db.Column(db.Boolean, default=True, nullable=False)
+    must_change_password = db.Column(db.Boolean, default=True, nullable=False)
     password = db.Column(db.String(256), nullable=False) # Hash da senha do usuário
     
     
@@ -20,6 +21,7 @@ class User(UserMixin,db.Model):
     # 'backref' permite acessar o usuário a partir da análise (ex: analise.autor)
     incidente = db.relationship('Incidente', backref='autor', lazy=True)
     observacoes = db.relationship('IncidenteObs', backref='autor_obs', lazy=True)
+    audit_logs = db.relationship('AuditLog', backref='usuario', lazy=True)
     
     # def set_password(self, password):
     #     self.password_hash = generate_password_hash(password) # Gera o hash da senha
@@ -36,6 +38,7 @@ class User(UserMixin,db.Model):
     
 class Incidente(db.Model):
     id = db.Column(db.Integer, primary_key=True) # ID do incidente
+    message_number = db.Column(db.String(100), nullable=True, index=True)
     incident_type = db.Column(db.String(100), nullable=False) # Tipo de incidente >>> posteriormente criar uma tabela de tipos de incidentes
     report_number = db.Column(db.String(50), nullable=False) # Número do relatório semanal ou relatorio técnico em que a análise foi feita
     ticket_number = db.Column(db.String(50), nullable= True) # Número da mensagem enviada ou chamado aberto
@@ -49,10 +52,12 @@ class Incidente(db.Model):
     
     # Chave estrangeira para o usuário que realizou a análise
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    description_plain_text = db.Column(db.Text, nullable=True)
     
     # Relacionamento: uma análise pode ter várias observações
     # 'lazy=True' significa que as observações serão carregadas sob demanda
     obs_incidente = db.relationship('IncidenteObs', backref='incidente', lazy=True, cascade="all, delete-orphan")
+    attachments = db.relationship('IncidentAttachment', backref='incidente', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Incidente {self.incident_type} - {self.report_number}>'
@@ -74,6 +79,24 @@ class IncidenteObs(db.Model):
     def __repr__(self):
         return f'<Observação {self.id}>'
         
+class IncidentAttachment(db.Model):
+    __tablename__ = "incident_attachments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    incident_id = db.Column(db.Integer, db.ForeignKey("incidente.id"), nullable=False, index=True)
+    original_filename = db.Column(db.String(255), nullable=False)
+    stored_filename = db.Column(db.String(255), nullable=False, unique=True)
+    mime_type = db.Column(db.String(150), nullable=False)
+    file_size = db.Column(db.BigInteger, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False, index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    uploaded_by = db.relationship("User", backref="incident_attachments")
+
+    def __repr__(self):
+        return f'<IncidentAttachment {self.original_filename}>'
+
+
 class Unidades(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     cpa = db.Column(db.String(100), nullable=False)
@@ -99,5 +122,28 @@ class StatusIncidente(db.Model):
 
     def __repr__(self):
         return f'<StatusIncidente {self.status} - {self.desc_status}>'
+    
+
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    usuario_identificacao = db.Column(db.String(255), nullable=False)
+    acao = db.Column(db.String(50), nullable=False, index=True)
+    modulo = db.Column(db.String(100), nullable=False, index=True)
+    entidade = db.Column(db.String(100), nullable=True)
+    entidade_id = db.Column(db.String(100), nullable=True, index=True)
+    descricao = db.Column(db.String(500), nullable=False)
+    alteracoes = db.Column(db.JSON, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+    endpoint = db.Column(db.String(255), nullable=True)
+    metodo_http = db.Column(db.String(10), nullable=True)
+    resultado = db.Column(db.String(30), nullable=False, default="SUCESSO")
+
+    def __repr__(self):
+        return f'<AuditLog {self.acao} {self.modulo} {self.timestamp}>'
     
     

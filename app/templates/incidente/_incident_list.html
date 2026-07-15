@@ -1,0 +1,102 @@
+{% from 'components/macros.html' import status_badge, empty_state %}
+{% set list_return_url = url_for('incidente.incidents_list', q=q, page=pagination.page if pagination else 1, status_filter=status_filter, sort_by=sort_by, direction=direction_filter) %}
+
+{% if incidentes %}
+<section aria-label="Tabela de incidentes">
+    <div class="app-table-wrap">
+        <table class="table app-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Tipo</th>
+                    <th>Abertura</th>
+                    <th>Relatório</th>
+                    <th>Ticket</th>
+                    <th>CPA</th>
+                    <th>BTL</th>
+                    <th>Status</th>
+                    <th>Tempo</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for incidente in incidentes %}
+                {% set ticket_parts = [] %}
+                {% if incidente.message_number %}{% set _ = ticket_parts.append(incidente.message_number) %}{% endif %}
+                {% if incidente.ticket_number %}{% set _ = ticket_parts.append(incidente.ticket_number) %}{% endif %}
+                <tr>
+                    <td>{{ incidente.id }}</td>
+                    <td>{{ incidente.incident_type }}</td>
+                    <td>{{ incidente.start_date.strftime("%d/%m/%Y") }}</td>
+                    <td>{{ incidente.report_number }}</td>
+                    <td>{{ ticket_parts|join(' - ') if ticket_parts else '—' }}</td>
+                    <td>{{ incidente.cpa }}</td>
+                    <td>{{ incidente.btl }}</td>
+                    <td>{{ status_badge(incidente.status_incident) }}</td>
+                    <td>{{ incidente.tempo_aberto_formatado|default('N/A') }}</td>
+                    <td>
+                        <a href="{{ url_for('incidente.incident_view', incident_id=incidente.id, return_to=list_return_url) }}" class="btn btn-outline-secondary btn-sm">Visualizar</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mobile-card-list">
+        {% for incidente in incidentes %}
+        <article class="mobile-record-card">
+            <div class="d-flex justify-content-between gap-3 align-items-start">
+                <div>
+                    <h2 class="h6 mb-1">#{{ incidente.id }} - {{ incidente.incident_type }}</h2>
+                    {{ status_badge(incidente.status_incident) }}
+                </div>
+                <a href="{{ url_for('incidente.incident_view', incident_id=incidente.id, return_to=list_return_url) }}" class="btn btn-outline-secondary btn-sm">Abrir</a>
+            </div>
+            <dl class="record-meta">
+                <div><dt>Abertura</dt><dd>{{ incidente.start_date.strftime("%d/%m/%Y") }}</dd></div>
+                <div><dt>Relatório</dt><dd>{{ incidente.report_number }}</dd></div>
+                <div><dt>CPA</dt><dd>{{ incidente.cpa }}</dd></div>
+                <div><dt>BTL</dt><dd>{{ incidente.btl }}</dd></div>
+                <div><dt>Mensagem</dt><dd>{{ incidente.message_number or 'N/A' }}</dd></div>
+                <div><dt>Chamado</dt><dd>{{ incidente.ticket_number or 'N/A' }}</dd></div>
+                <div><dt>Tempo</dt><dd>{{ incidente.tempo_aberto_formatado|default('N/A') }}</dd></div>
+            </dl>
+        </article>
+        {% endfor %}
+    </div>
+
+    {% if pagination and pagination.pages > 1 %}
+    <nav class="mt-4" aria-label="Paginação de incidentes">
+        <ul class="pagination flex-wrap">
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('incidente.incidents_list', page=pagination.prev_num, q=q, status_filter=status_filter, sort_by=sort_by, direction=direction_filter) }}">Anterior</a>
+            </li>
+            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('incidente.incidents_list', page=page_num, q=q, status_filter=status_filter, sort_by=sort_by, direction=direction_filter) }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('incidente.incidents_list', page=pagination.next_num, q=q, status_filter=status_filter, sort_by=sort_by, direction=direction_filter) }}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</section>
+{% else %}
+    {% if q %}
+        <div class="empty-state" role="status">
+            <div class="empty-state__mark" aria-hidden="true"></div>
+            <h2>Nenhum incidente encontrado para os critérios informados.</h2>
+            <p>Ajuste o termo pesquisado ou limpe a pesquisa global mantendo os filtros selecionados.</p>
+            <button type="button" class="btn btn-outline-secondary" data-clear-incident-search>Limpar pesquisa</button>
+        </div>
+    {% else %}
+        {{ empty_state('Nenhum incidente encontrado', 'Cadastre um novo incidente ou ajuste os filtros aplicados.', url_for('incidente.new_incident') if current_user.profile in ['Admin', 'User'] else '', 'Registrar incidente' if current_user.profile in ['Admin', 'User'] else '') }}
+    {% endif %}
+{% endif %}

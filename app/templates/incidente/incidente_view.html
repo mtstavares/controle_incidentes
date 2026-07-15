@@ -1,125 +1,131 @@
 {% extends "base.html" %}
+{% from 'components/macros.html' import page_header, status_badge, empty_state %}
+
+{% set ticket_parts = [] %}
+{% if incidente.message_number %}{% set _ = ticket_parts.append(incidente.message_number) %}{% endif %}
+{% if incidente.ticket_number %}{% set _ = ticket_parts.append(incidente.ticket_number) %}{% endif %}
 
 {% block content %}
-<div class="container">
-    <div class="row">
-        <div class="container mt-2">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4>Detalhes do Incidente</h4>
-                    <div>
-                    <a href="{{ url_for('incidente.edit_incident', incident_id=incidente.id) }}" class="btn btn-warning me-2">Editar</a>
-                    <form method="POST" action="{{ url_for('incidente.delete_incident', incident_id=incidente.id)  }}" style="display:inline;">
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('Tem certeza que deseja excluir este incidente?');">Excluir</button>
-                    </form>
-                </div>
-                </div>
-            
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h5 class="card-title"><strong>ID:</strong> {{ incidente.id }}</h5>
-                    <h5 class="card-title"><strong>Status:</strong> {{ incidente.status_incident }}</h5>
-                    <h5 class="card-title"><strong>Tipo:</strong>{{ incidente.incident_type }}</h5>
-                    <p class="card-text"><strong>Data de Início:</strong> {{ incidente.start_date.strftime('%d/%m/%Y %H:%M') }}</p>
-                    {% if incidente.end_date %}
-                        <p class="card-text"><strong>Data de Encerramento:</strong> {{ incidente.end_date.strftime('%d/%m/%Y %H:%M') }}</p>
-                    {% endif %}
-                    <p class="card-text"><strong>Registrado por:</strong> {{ incidente.autor.name }}</p>
-                    <p class="card-text"><strong>Nº relatório:</strong> {{ incidente.report_number }}</p>
-                    <p class="card-text"><strong>Ticket:</strong> {{ incidente.ticket_number or 'N/A' }}</p>
-                    <p class="card-text"><strong>CPA:</strong> {{ incidente.cpa }}</p>
-                    <p class="card-text"><strong>Batalhão:</strong> {{ incidente.btl }}</p>
-                    <p class="card-text"><strong>Companhia:</strong> {{ incidente.cia or 'N/A' }}</p>
-                    <p class="card-text"><strong>Descrição:</strong> {{ incidente.description }}</p>
-                    
-                </div>
-            </div>
+{{ page_header('Incidente #' ~ incidente.id, 'Detalhamento completo, observações e ações disponíveis para o registro.') }}
+
+<div class="incident-detail-actions mb-4">
+    <div class="incident-detail-actions__start">
+        <a href="{{ return_url|default(url_for('incidente.incidents_list')) }}" class="btn btn-outline-secondary">Voltar</a>
+    </div>
+    <div class="incident-detail-actions__end">
+        {% if current_user.profile in ['Admin', 'User'] %}
+            <a href="{{ url_for('incidente.edit_incident', incident_id=incidente.id) }}" class="btn btn-primary">Editar incidente</a>
+            <form method="POST" action="{{ url_for('incidente.delete_incident', incident_id=incidente.id) }}" data-prevent-duplicate>
+                <button type="submit" class="btn btn-outline-danger" data-loading-text="Excluindo..." onclick="return confirm('Tem certeza que deseja excluir este incidente?');">Excluir</button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+<section class="app-card mb-4" aria-labelledby="identification-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="identification-title" class="h5 mb-1">Identificação</h2>
+            <p class="text-muted mb-0">Informações principais do registro.</p>
+        </div>
+        {{ status_badge(incidente.status_incident) }}
+    </div>
+    <div class="app-card__body">
+        <ul class="incident-identity-list">
+            <li><strong>ID:</strong> <span>{{ incidente.id }}</span></li>
+            <li><strong>Status:</strong> <span>{{ incidente.status_incident }}</span></li>
+            <li><strong>Tipo:</strong> <span>{{ incidente.incident_type }}</span></li>
+            <li><strong>Data de Início:</strong> <span>{{ incidente.start_date.strftime('%d/%m/%Y') }}</span></li>
+            <li><strong>Data de Encerramento:</strong> <span>{{ incidente.end_date.strftime('%d/%m/%Y %H:%M') if incidente.end_date else 'Em aberto' }}</span></li>
+            <li><strong>Registrado por:</strong> <span>{{ incidente.autor.name }}</span></li>
+            <li><strong>Nº relatório:</strong> <span>{{ incidente.report_number }}</span></li>
+            <li><strong>Ticket:</strong> <span>{{ ticket_parts|join(' - ') if ticket_parts else 'N/A' }}</span></li>
+            <li><strong>CPA:</strong> <span>{{ incidente.cpa }}</span></li>
+            <li><strong>Batalhão:</strong> <span>{{ incidente.btl }}</span></li>
+            <li><strong>Companhia:</strong> <span>{{ incidente.cia or 'N/A' }}</span></li>
+        </ul>
+    </div>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="description-view-title">
+    <div class="app-card__header">
+        <h2 id="description-view-title" class="h5 mb-0">Descrição</h2>
+    </div>
+    <div class="app-card__body">
+        {% if incidente.description_plain_text %}
+            <div class="rich-content rich-content--full">{{ incidente.description|safe }}</div>
+        {% else %}
+            <p class="text-preserve mb-0">{{ incidente.description }}</p>
+        {% endif %}
+        {% if incidente.attachments %}
+        <div class="saved-attachments mt-4">
+            <h3 class="h6">Anexos</h3>
+            <ul class="attachment-list">
+            {% for attachment in incidente.attachments %}
+                {% set ext = attachment.original_filename.rsplit('.', 1)[-1]|lower %}
+                <li class="attachment-item">
+                    <span class="attachment-file-icon attachment-file-icon--{{ ext }}" aria-hidden="true">{{ ext|upper }}</span>
+                    <span class="attachment-item__name">{{ attachment.original_filename }}</span>
+                    <span class="attachment-item__meta">{{ (attachment.file_size / 1024)|round(1) }} KB</span>
+                    <div class="attachment-item__actions">
+                        {% if is_inline_attachment(attachment) %}
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('incidente.open_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}" target="_blank" rel="noopener noreferrer">Abrir</a>
+                        {% endif %}
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('incidente.download_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}">Download</a>
+                        {% if current_user.profile in ['Admin', 'User'] %}
+                        <form method="POST" action="{{ url_for('incidente.delete_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}" data-prevent-duplicate>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Tem certeza que deseja excluir este anexo?');">Excluir</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="obs-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="obs-title" class="h5 mb-1">Observações e histórico</h2>
+            <p class="text-muted mb-0">Registros cronológicos vinculados ao incidente.</p>
         </div>
     </div>
+    <div class="app-card__body">
+        {% if current_user.profile in ['Admin', 'User'] %}
+        <form method="POST" action="{{ url_for('incidente.add_obs', incident_id=incidente.id) }}" class="mb-4" data-prevent-duplicate>
+            <label for="texto_observacao" class="form-label">Nova observação</label>
+            <textarea class="form-control" id="texto_observacao" name="texto_observacao" rows="4" required aria-required="true"></textarea>
+            <div class="d-flex justify-content-end mt-3">
+                <button type="submit" class="btn btn-primary" data-loading-text="Salvando...">Salvar observação</button>
+            </div>
+        </form>
+        {% endif %}
 
-    
-    <!-- Card Observações -->
-        <div class="container mt-2">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4>Observações</h4>
-                    <button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#addObsModal">
-                        Adicionar Observação
-                    </button>
-                </div>
-                {% if incidente.obs_incidente %}
+        {% if incidente.obs_incidente %}
+            <div class="timeline">
                 {% for obs in incidente.obs_incidente %}
-                <div class="card m-2">
-                    <div class="card-header">
-                        <div class="card-body">
-                            <h5 class="card-title">{{ 'Alteração' if obs.autor_obs.name == 'system' else 'Observação'}}</h5>
-                            <p class="card-text">{{obs.texto_observacao}}</p>
-                            <small class="text-muted">
-                                Por {{ obs.autor_obs.name }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M') }} - ID:{{ obs.id }}
-                            </small>
-                            {%if obs.autor_obs == current_user or current_user.profile == 'Admin'%}
-                            <form method="POST" action="{{ url_for('incidente.delete_obs', incident_id=incidente.id, obs_id=obs.id) }}" style="display:inline;">
-                                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja excluir esta observação?');">Excluir</button>
-                            </form>
-                            {%endif%}
+                <article class="timeline-item">
+                    <div class="d-flex flex-column flex-md-row justify-content-between gap-2">
+                        <div>
+                            <h3 class="h6 mb-1">{{ 'Alteração' if obs.autor_obs.name == 'system' else 'Observação' }}</h3>
+                            <p class="text-muted small mb-0">Por {{ obs.autor_obs.name }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M') }} - ID {{ obs.id }}</p>
                         </div>
-
-                    </div>
-
-                </div>
-                {% endfor %}
-                {% else %}
-                    <p class="text-muted">Nenhuma observação foi adicionada ainda.</p>
-                {% endif %}
-                
-                
-            </div>
-        
-            <!-- Modal Adicionar Observação -->
-
-            <div class="modal fade" id="addObsModal" tabindex="-1" aria-labelledby="addObsModalLabel" aria-hidden="true">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="addObsModalLabel">Adicionar Nova Observação</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <form method="POST" action="{{ url_for('incidente.add_obs', incident_id=incidente.id) }}">
-                            <div class="modal-body">
-                                <div class="mb-3">
-                                    <label for="texto_observacao" class="form-label">Observação</label>
-                                    <textarea class="form-control" id="texto_observacao" name="texto_observacao" rows="5" required></textarea>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Salvar Observação</button>
-                            </div>
+                        {% if obs.autor_obs == current_user or current_user.profile == 'Admin' %}
+                        <form method="POST" action="{{ url_for('incidente.delete_obs', incident_id=incidente.id, obs_id=obs.id) }}" data-prevent-duplicate>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" data-loading-text="Excluindo..." onclick="return confirm('Tem certeza que deseja excluir esta observação?');">Excluir</button>
                         </form>
+                        {% endif %}
                     </div>
-                </div>
+                    <p class="text-preserve mt-3 mb-0">{{ obs.texto_observacao }}</p>
+                </article>
+                {% endfor %}
             </div>
-        </div>
-        <!-- Card Observações -FIM -->
-
-    <!-- <div class="row">
-        <div class="col-md-12">
-            <h4>Observações</h4>
-            {% if incidente.obs_incidente %}
-                <ul class="list-group">
-                    {% for obs in incidente.obs_incidente %}
-                        <li class="list-group-item">
-                            <p class="mb-1">{{ obs.texto_observacao }}</p>
-                            <small class="text-muted">Por {{ obs.autor_obs.username }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M') }}</small>
-                        </hr>
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="text-muted">Nenhuma observação encontrada.</p>
-            {% endif %}
-        </div>
-
-    </div> -->
-</div>        
+        {% else %}
+            {{ empty_state('Nenhuma observação registrada', 'Adicione uma observação para documentar evolução, decisões ou evidências do incidente.') }}
+        {% endif %}
+    </div>
+</section>
 {% endblock %}

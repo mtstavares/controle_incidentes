@@ -1,15 +1,46 @@
 {% extends 'base.html' %}
+{% from 'components/macros.html' import page_header %}
+
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <h1 class="text-center">Bem-vindo, {{ current_user.name }}.    </h1>
+{{ page_header('Painel inicial', 'Visão de entrada para acompanhamento e operação dos incidentes registrados no ambiente DivCiber.') }}
+
+<section class="metric-grid" aria-label="Atalhos principais">
+    <article class="metric-card">
+        <p class="metric-card__label">Operação</p>
+        <p class="metric-card__value">Incidentes</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.incidents_list') }}">Acessar lista</a>
+    </article>
+    <article class="metric-card">
+        <p class="metric-card__label">Indicadores</p>
+        <p class="metric-card__value">Status</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes_status') }}">Ver dashboard</a>
+    </article>
+    <article class="metric-card">
+        <p class="metric-card__label">Distribuição</p>
+        <p class="metric-card__value">CPA/BTL</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes_cpa_btl') }}">Analisar</a>
+    </article>
+    {% if current_user.profile in ['Admin', 'User'] %}
+    <article class="metric-card">
+        <p class="metric-card__label">Registro</p>
+        <p class="metric-card__value">Novo</p>
+        <a class="btn btn-primary mt-3" href="{{ url_for('incidente.new_incident') }}">Registrar incidente</a>
+    </article>
+    {% endif %}
+</section>
+
+<section class="app-card">
+    <div class="app-card__body">
+        <div class="row align-items-center g-4">
+            <div class="col-lg-3 text-center">
+                <img src="{{ url_for('static', filename='img/logo_divciber.jpg') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 180px;">
+            </div>
+            <div class="col-lg-9">
+                <p class="eyebrow">Sessão ativa</p>
+                <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
+                <p class="mb-0 text-muted">Use o menu lateral para navegar entre registros, dashboards e funcionalidades administrativas conforme seu perfil de acesso.</p>
+            </div>
+        </div>
     </div>
-
-</div>
-<div class="row text-center">
-    <img src="{{ url_for('static', filename='img/logo_divciber.png') }}" class="rounded mx-auto d-block" alt="Logo"  style="max-width: 1200px; height: auto;" >
-
-</div>
-
-
+</section>
 {% endblock %}

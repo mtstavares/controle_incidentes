@@ -15,7 +15,17 @@ def get_filtered_incidents_df(start_date, end_date, incident_type, status_str):
     
     # Consulta todos os incidentes e converte para DataFrame
     incidentes_query = Incidente.query.all()
+    columns = [
+        'start_date',
+        'end_date',
+        'incident_type',
+        'status_incident',
+        'cpa',
+        'btl',
+    ]
     df = pd.DataFrame([incidente.__dict__ for incidente in incidentes_query])
+    if df.empty:
+        df = pd.DataFrame(columns=columns)
     
     # Converte as colunas de data para o formato datetime
     df['start_date'] = pd.to_datetime(df['start_date'])

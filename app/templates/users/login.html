@@ -1,29 +1,64 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card mt-5">
-            <div class="card-header text-center">
-                <h3>Login</h3>
+{% block auth_content %}
+<div class="login-page">
+    <section class="login-hero" aria-label="Identidade institucional">
+        <div class="login-hero__brand">
+            <img class="login-hero__logo" src="{{ url_for('static', filename='img/logo_divciber.jpg') }}" alt="Brasão da Divisão de Cibersegurança">
+            <div>
+                <strong>DivCiber</strong>
+                <p class="mb-0">Diretoria de Tecnologia da Informação e Comunicação</p>
             </div>
-            <div class="card-body">
-                <form method="POST" action="#">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Usuário</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Senha</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-success">Login</button>
-                    </div>
-                </form>
-            </div>
-            
         </div>
-    </div>
+        <div>
+            <p class="eyebrow text-white">Controle de Incidentes</p>
+            <h1>Gestão institucional de incidentes cibernéticos.</h1>
+            <p class="mt-3">Acesse o ambiente interno para registrar, acompanhar e analisar ocorrências com rastreabilidade e segurança.</p>
+        </div>
+        <p class="mb-0">Acesso restrito a usuários autorizados.</p>
+    </section>
+
+    <section class="login-panel" aria-labelledby="login-title">
+        <div class="login-card">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <section class="app-notification-stack mb-4" aria-label="Mensagens do sistema" data-notification-container>
+                    {% for category, message in messages %}
+                        <div
+                            class="app-notification app-notification--{{ category }}"
+                            data-app-notification
+                            role="{% if category == 'danger' %}alert{% else %}status{% endif %}"
+                            aria-live="{% if category == 'danger' %}assertive{% else %}polite{% endif %}"
+                        >
+                            <div class="app-notification__content">{{ message }}</div>
+                            <button type="button" class="app-notification__close" data-notification-close aria-label="Fechar notifica??o">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    {% endfor %}
+                    </section>
+                {% endif %}
+            {% endwith %}
+
+            <p class="eyebrow">Autenticação</p>
+            <h2 id="login-title" class="h3 fw-bold">Entrar no sistema</h2>
+            <p class="text-muted">Use seu usuário e senha cadastrados.</p>
+
+            <form method="POST" action="#" data-prevent-duplicate novalidate>
+                <div class="mb-3">
+                    <label for="username" class="form-label">Usuário <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="text" class="form-control" id="username" name="username" autocomplete="username" required aria-required="true">
+                </div>
+                <div class="mb-4">
+                    <label for="password" class="form-label">Senha <span class="required-mark" aria-hidden="true">*</span></label>
+                    <div class="password-field">
+                        <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required aria-required="true">
+                        <button class="btn btn-outline-secondary" type="button" data-toggle-password="password" aria-pressed="false">Mostrar</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100" data-loading-text="Entrando...">Entrar</button>
+            </form>
+        </div>
+    </section>
 </div>
 {% endblock %}

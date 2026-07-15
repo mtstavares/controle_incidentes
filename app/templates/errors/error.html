@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import empty_state %}
+
+{% block content %}
+{{ empty_state(code ~ ' - ' ~ title, message, url_for('main.home'), 'Voltar ao início') }}
+{% endblock %}

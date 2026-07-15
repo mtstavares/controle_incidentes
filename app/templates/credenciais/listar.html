@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Credenciais comprometidas', 'Módulo futuro para gerenciamento seguro de credenciais expostas ou suspeitas de comprometimento.') }}
+
+<section class="app-card mb-4" aria-labelledby="credenciais-info-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="credenciais-info-title" class="h5 mb-1">Funcionalidade em desenvolvimento</h2>
+            <p class="text-muted mb-0">O módulo de gerenciamento de credenciais comprometidas está em desenvolvimento.</p>
+        </div>
+        <button class="btn btn-outline-secondary" type="button" disabled aria-disabled="true">Nova credencial indisponível</button>
+    </div>
+    <div class="app-card__body">
+        <div class="filter-grid" aria-label="Filtros preparados para versão futura">
+            <div class="span-4">
+                <label class="form-label" for="future-search">Pesquisar</label>
+                <input class="form-control" id="future-search" type="text" placeholder="Disponível futuramente" disabled>
+            </div>
+            <div class="span-4">
+                <label class="form-label" for="future-status">Status</label>
+                <select class="form-select" id="future-status" disabled>
+                    <option>Disponível futuramente</option>
+                </select>
+            </div>
+            <div class="span-4">
+                <label class="form-label" for="future-period">Período</label>
+                <input class="form-control" id="future-period" type="date" disabled>
+            </div>
+        </div>
+    </div>
+</section>
+
+{{ empty_state('Nenhuma credencial carregada', 'Não há dados reais para exibir neste módulo enquanto a funcionalidade estiver em desenvolvimento.') }}
+{% endblock %}

@@ -1,23 +1,239 @@
 # app/blueprints/analise/routes.py
 
-from flask import render_template, url_for, flash, redirect, request, current_app
+from flask import abort, render_template, url_for, flash, redirect, request, current_app, send_file
 from app.blueprints.incidente import incidente_bp
-from app.models import Incidente, User, IncidenteObs, Unidades, StatusIncidente, TipoIncidente
+from app.models import Incidente, User, IncidenteObs, Unidades, StatusIncidente, TipoIncidente, IncidentAttachment
 from app import db
 from flask_login import login_required, current_user
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import or_
+from zoneinfo import ZoneInfo
+from sqlalchemy import String, cast, or_
+from urllib.parse import urlsplit
+from types import SimpleNamespace
 from app.utils.data_processing import get_filtered_incidents_df
 from app.blueprints.users.routes import allowed_edit_profile
+from app.services.audit_service import AuditAction, montar_alteracoes, registrar_auditoria
+from app.services.attachment_service import (
+    AttachmentValidationError,
+    delete_attachment_file,
+    resolve_attachment_path,
+    save_incident_attachments,
+)
+from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
+
+MAX_SEARCH_LENGTH = 200
+INCIDENTS_PER_PAGE = 10
+SAO_PAULO_TZ = ZoneInfo("America/Sao_Paulo")
+TIPOS_INCIDENTE_PERMITIDOS = {
+    "Requisi??es automatizadas",
+    "Transfer?ncia de arquivo malicioso",
+    "Bloqueio de acesso a VPN",
+    "Phishing",
+    "Comando e Controle",
+    "Incidente envolvendo VPN corporativa",
+    "Criptomining",
+    "Malware",
+    "Ativador KMS",
+    "Tentativa de intrus?o",
+    "Comprometimento de Credenciais",
+    "Quebra de Confidencialidade",
+    "Brute Force",
+}
+TIPOS_INCIDENTE_FORM = sorted(TIPOS_INCIDENTE_PERMITIDOS)
+SORTABLE_INCIDENT_FIELDS = {
+    "start_date": Incidente.start_date,
+    "incident_type": Incidente.incident_type,
+    "report_number": Incidente.report_number,
+}
+
+
+def _is_safe_internal_path(path):
+    if not path:
+        return False
+    parsed = urlsplit(path)
+    return not parsed.scheme and not parsed.netloc and path.startswith("/") and not path.startswith("//")
+
+
+def _today_local_date():
+    return datetime.now(SAO_PAULO_TZ).date()
+
+
+def _parse_registration_date(value):
+    try:
+        parsed = datetime.strptime((value or "").strip(), "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("Formato de data inv?lido.") from exc
+    return parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _get_incident_types_for_form(current_value=None):
+    values = list(TIPOS_INCIDENTE_FORM)
+    if current_value and current_value not in values:
+        values.append(current_value)
+    return values
+
+
+def _incident_draft_from_form(description=None, description_plain_text=""):
+    registration_date = (request.form.get("registration_date") or request.form.get("start_data_hora", "")[:10]).strip()
+    start_date = None
+    if registration_date:
+        try:
+            start_date = _parse_registration_date(registration_date)
+        except ValueError:
+            start_date = None
+    return SimpleNamespace(
+        id=None,
+        status_incident=request.form.get("status_incidente", "").strip(),
+        start_date=start_date,
+        incident_type=request.form.get("incident_type", "").strip(),
+        report_number=request.form.get("report_number", "").strip(),
+        message_number=request.form.get("message_number", "").strip(),
+        ticket_number=request.form.get("ticket_number", "").strip(),
+        btl=request.form.get("btl", "").strip(),
+        cpa=request.form.get("cpa", "").strip(),
+        cia=request.form.get("cia", "").strip(),
+        description=description if description is not None else request.form.get("description", ""),
+        description_plain_text=description_plain_text,
+        attachments=[],
+    )
+
+
+def _apply_form_to_incident_like(target, *, description, description_plain_text):
+    target.status_incident = request.form.get("status_incidente", "").strip()
+    registration_date = (request.form.get("registration_date") or request.form.get("start_data_hora", "")[:10]).strip()
+    target.start_date = _parse_registration_date(registration_date) if registration_date else None
+    target.incident_type = request.form.get("incident_type", "").strip()
+    target.report_number = request.form.get("report_number", "").strip()
+    target.message_number = request.form.get("message_number", "").strip() or None
+    target.ticket_number = request.form.get("ticket_number", "").strip() or None
+    target.btl = request.form.get("btl", "").strip()
+    target.cpa = request.form.get("cpa", "").strip()
+    target.cia = request.form.get("cia", "").strip()
+    target.description = description
+    target.description_plain_text = description_plain_text
+    return target
+
+
+def _incident_edit_draft(original_incident, description=None, description_plain_text=""):
+    draft = _incident_draft_from_form(description=description, description_plain_text=description_plain_text)
+    draft.id = original_incident.id
+    draft.attachments = list(original_incident.attachments or [])
+    return draft
+
+
+def _render_incident_form_response(*, title, unidades, status_incident_list, incidents_types, data_atual, incident=None, edit_mode=False, status_code=200):
+    return render_template(
+        "incidente/new_incident.html",
+        title=title,
+        incident=incident,
+        edit_mode=edit_mode,
+        unidades=unidades,
+        status_incident_list=status_incident_list,
+        incidents_types=incidents_types,
+        data_atual=data_atual,
+    ), status_code
+
+
+def _is_inline_attachment(attachment):
+    return attachment.mime_type in {"application/pdf", "image/png", "image/jpeg", "image/webp"}
+
+
+def _format_incident_durations(incidentes):
+    now = datetime.now()
+    incidentes_com_tempo = []
+    for inc in incidentes:
+        start_date_aware = inc.start_date.replace()
+
+        if inc.end_date:
+            end_date_aware = inc.end_date.replace()
+            duracao = end_date_aware - start_date_aware
+        else:
+            duracao = now - start_date_aware
+
+        inc.tempo_aberto_formatado = format_timedelta(duracao)
+        incidentes_com_tempo.append(inc)
+    return incidentes_com_tempo
+
+
+def _build_incidents_query():
+    status_filter = request.args.get('status_filter')
+    direction_filter = request.args.get('direction', 'desc')
+    sort_by = request.args.get('sort_by', 'start_date')
+    termo = request.args.get('q', '').strip()
+
+    if len(termo) > MAX_SEARCH_LENGTH:
+        abort(400)
+
+    query = Incidente.query
+
+    if status_filter and status_filter != 'todos':
+        query = query.filter(Incidente.status_incident == status_filter)
+
+    if termo:
+        padrao = f"%{termo}%"
+        query = query.filter(or_(
+            cast(Incidente.id, String).ilike(padrao),
+            Incidente.incident_type.ilike(padrao),
+            Incidente.report_number.ilike(padrao),
+            Incidente.message_number.ilike(padrao),
+            Incidente.ticket_number.ilike(padrao),
+            Incidente.status_incident.ilike(padrao),
+            Incidente.cpa.ilike(padrao),
+            Incidente.btl.ilike(padrao),
+            Incidente.cia.ilike(padrao),
+            Incidente.description_plain_text.ilike(padrao),
+            cast(Incidente.start_date, String).ilike(padrao),
+            cast(Incidente.end_date, String).ilike(padrao),
+            Incidente.autor.has(or_(
+                User.name.ilike(padrao),
+                User.username.ilike(padrao),
+                User.email.ilike(padrao),
+            )),
+            Incidente.obs_incidente.any(or_(
+                IncidenteObs.texto_observacao.ilike(padrao),
+                cast(IncidenteObs.data_observacao, String).ilike(padrao),
+                IncidenteObs.autor_obs.has(or_(
+                    User.name.ilike(padrao),
+                    User.username.ilike(padrao),
+                    User.email.ilike(padrao),
+                )),
+            )),
+            Incidente.attachments.any(IncidentAttachment.original_filename.ilike(padrao)),
+        ))
+
+    sort_column = SORTABLE_INCIDENT_FIELDS.get(sort_by, Incidente.start_date)
+    if direction_filter == 'asc':
+        query = query.order_by(db.asc(sort_column))
+    else:
+        direction_filter = 'desc'
+        query = query.order_by(db.desc(sort_column))
+
+    return query, {
+        "status_filter": status_filter,
+        "direction_filter": direction_filter,
+        "sort_by": sort_by if sort_by in SORTABLE_INCIDENT_FIELDS else "start_date",
+        "q": termo,
+    }
+
+
+def _render_incident_list_context():
+    page = request.args.get('page', 1, type=int)
+    query, filters = _build_incidents_query()
+    pagination = query.paginate(page=page, per_page=INCIDENTS_PER_PAGE, error_out=False)
+    incidentes = _format_incident_durations(pagination.items)
+    return incidentes, pagination, filters
 
 
 
 
-# Função auxiliar para formatar timedelta em uma string legível ##  PASSAR ESSA FUNÇÃO PARA UM ARQUIVO UTILIDADES
+# Função auxiliar para formatar timedelta em uma string legível ##  PASSAR ESSA FUN??O PARA UM ARQUIVO UTILIDADES
 def format_timedelta(td):
     """Formata um objeto timedelta para uma string legível (Dias, Horas, Minutos)."""
     if not td:
         return "N/A"
+
+    dias_somente = max(0, int(td.total_seconds()) // 86400)
+    return f"{dias_somente} dia" if dias_somente == 1 else f"{dias_somente} dias"
         
     total_segundos = int(td.total_seconds())
     dias, resto = divmod(total_segundos, 86400)
@@ -48,11 +264,47 @@ def format_timedelta(td):
 @incidente_bp.route("/incidentes", methods=['GET'])
 @login_required
 def incidents_list():
+    incidentes, pagination, filters = _render_incident_list_context()
+    total_incidents = Incidente.query.count()
+    open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
+    closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
+    status_options = db.session.query(Incidente.status_incident).distinct().all()
+
+    return render_template('incidente/incidentes.html',
+                           title="Incidentes de seguran?a",
+                           incidentes=incidentes,
+                           pagination=pagination,
+                           total_incidents=total_incidents,
+                           open_incidents=open_incidents,
+                           closed_incidents=closed_incidents,
+                           status_options=status_options,
+                           direction_filter=filters["direction_filter"],
+                           sort_by=filters["sort_by"],
+                           status_filter=filters["status_filter"],
+                           q=filters["q"])
+
+
+@incidente_bp.route("/incidentes/pesquisa", methods=['GET'])
+@login_required
+def search_incidents():
+    incidentes, pagination, filters = _render_incident_list_context()
+    return render_template(
+        'incidente/_incident_list.html',
+        incidentes=incidentes,
+        pagination=pagination,
+        status_filter=filters["status_filter"],
+        direction_filter=filters["direction_filter"],
+        sort_by=filters["sort_by"],
+        q=filters["q"],
+    )
+
     
     #recebendo parametros de filtro da URL
     status_filter = request.args.get('status_filter')
     direction_filter = request.args.get('direction', 'desc') # Padrão decrescente pela data de criação
     sort_by = request.args.get('sort_by', 'start_date') # Padrão ordenação pela data de início
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
     
     query = Incidente.query
     
@@ -66,8 +318,11 @@ def incidents_list():
             query = query.order_by(db.asc(getattr(Incidente, sort_by)))
     
     
-    # Rota para listar todas as análises
-    incidentes = query.all()
+    total_incidents = Incidente.query.count()
+    open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
+    closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    incidentes = pagination.items
     
     
     
@@ -102,8 +357,12 @@ def incidents_list():
     status_options = db.session.query(Incidente.status_incident).distinct().all()
     
     return render_template('incidente/incidentes.html', 
-                           title="Incidentes Registrados", 
+                           title="Incidentes de segurança", 
                            incidentes = incidentes_com_tempo,
+                           pagination=pagination,
+                           total_incidents=total_incidents,
+                           open_incidents=open_incidents,
+                           closed_incidents=closed_incidents,
                            status_options=status_options,
                            direction_filter=direction_filter,
                            sort_by=sort_by,
@@ -116,6 +375,176 @@ def incidents_list():
 @login_required
 def new_incident():
     if allowed_edit_profile(current_user): # função para verificar permissão do usuário para edição
+        data_atual = _today_local_date()
+        unidades = Unidades.query.all()
+        status_incident_list = StatusIncidente.query.all()
+        incidents_types = _get_incident_types_for_form()
+
+        if request.method == 'POST':
+            status_incident = request.form.get('status_incidente', '').strip()
+            registration_date = (request.form.get('registration_date') or request.form.get('start_data_hora', '')[:10]).strip()
+            incident_type = request.form.get('incident_type', '').strip()
+            report_number = request.form.get('report_number', '').strip()
+            message_number = request.form.get('message_number', '').strip()
+            ticket_number = request.form.get('ticket_number', '').strip()
+            btl = request.form.get('btl', '').strip()
+            cpa = request.form.get('cpa', '').strip()
+            cia = request.form.get('cia', '').strip()
+            raw_description = request.form.get('description', '')
+            user_id = current_user.id
+
+            if incident_type not in TIPOS_INCIDENTE_PERMITIDOS:
+                flash('Tipo de incidente informado é inválido.', 'danger')
+                return _render_incident_form_response(
+                    title="Registro de Incidente",
+                    unidades=unidades,
+                    status_incident_list=status_incident_list,
+                    incidents_types=_get_incident_types_for_form(incident_type),
+                    data_atual=data_atual,
+                    incident=_incident_draft_from_form(),
+                    status_code=400,
+                )
+
+            try:
+                start_date = _parse_registration_date(registration_date)
+                description, description_plain_text = sanitize_incident_description(raw_description)
+            except (ValueError, SanitizationError) as exc:
+                flash(str(exc), 'danger')
+                return _render_incident_form_response(
+                    title="Registro de Incidente",
+                    unidades=unidades,
+                    status_incident_list=status_incident_list,
+                    incidents_types=_get_incident_types_for_form(incident_type),
+                    data_atual=data_atual,
+                    incident=_incident_draft_from_form(),
+                    status_code=400,
+                )
+
+            if not all([status_incident, registration_date, incident_type, report_number, btl, cpa, description_plain_text]):
+                missing_labels = []
+                if not status_incident:
+                    missing_labels.append("Status")
+                if not registration_date:
+                    missing_labels.append("Data de registro")
+                if not incident_type:
+                    missing_labels.append("Tipo de incidente")
+                if not report_number:
+                    missing_labels.append("Nº relatório")
+                if not btl:
+                    missing_labels.append("Batalhão/unidade")
+                if not cpa:
+                    missing_labels.append("CPA/Grande comando")
+                if not description_plain_text:
+                    missing_labels.append("Descrição")
+                flash("Preencha os campos obrigatórios: " + ", ".join(missing_labels) + ".", 'danger')
+                return _render_incident_form_response(
+                    title="Registro de Incidente",
+                    unidades=unidades,
+                    status_incident_list=status_incident_list,
+                    incidents_types=_get_incident_types_for_form(incident_type),
+                    data_atual=data_atual,
+                    incident=_incident_draft_from_form(description=description, description_plain_text=description_plain_text),
+                    status_code=400,
+                )
+
+            new_incident = Incidente(
+                status_incident=status_incident,
+                start_date=start_date,
+                incident_type=incident_type,
+                report_number=report_number,
+                message_number=message_number or None,
+                ticket_number=ticket_number or None,
+                btl=btl,
+                cpa=cpa,
+                cia=cia,
+                description=description,
+                description_plain_text=description_plain_text,
+                user_id=user_id,
+            )
+
+            saved_attachments = []
+            try:
+                db.session.add(new_incident)
+                db.session.flush()
+                saved_attachments = save_incident_attachments(request.files.getlist('incident_attachments'), new_incident, current_user)
+                for attachment in saved_attachments:
+                    db.session.add(attachment)
+                db.session.commit()
+            except AttachmentValidationError as exc:
+                db.session.rollback()
+                flash(str(exc), 'danger')
+                return _render_incident_form_response(
+                    title="Registro de Incidente",
+                    unidades=unidades,
+                    status_incident_list=status_incident_list,
+                    incidents_types=_get_incident_types_for_form(incident_type),
+                    data_atual=data_atual,
+                    incident=_incident_draft_from_form(description=description, description_plain_text=description_plain_text),
+                    status_code=400,
+                )
+            except Exception as exc:
+                db.session.rollback()
+                for attachment in saved_attachments:
+                    delete_attachment_file(attachment)
+                current_app.logger.exception("Falha ao criar incidente: %s", exc)
+                flash('Não foi possível registrar o incidente.', 'danger')
+                return _render_incident_form_response(
+                    title="Registro de Incidente",
+                    unidades=unidades,
+                    status_incident_list=status_incident_list,
+                    incidents_types=_get_incident_types_for_form(incident_type),
+                    data_atual=data_atual,
+                    incident=_incident_draft_from_form(description=description, description_plain_text=description_plain_text),
+                    status_code=500,
+                )
+
+            registrar_auditoria(
+                acao=AuditAction.CRIAR,
+                modulo="Incidentes de segurança",
+                entidade="Incidente",
+                entidade_id=new_incident.id,
+                descricao=f"Incidente criado: {new_incident.report_number}",
+                alteracoes={
+                    "status_incident": {"anterior": None, "novo": status_incident},
+                    "start_date": {"anterior": None, "novo": start_date.date()},
+                    "incident_type": {"anterior": None, "novo": incident_type},
+                    "report_number": {"anterior": None, "novo": report_number},
+                    "message_number": {"anterior": None, "novo": message_number},
+                    "ticket_number": {"anterior": None, "novo": ticket_number},
+                    "btl": {"anterior": None, "novo": btl},
+                    "cpa": {"anterior": None, "novo": cpa},
+                    "cia": {"anterior": None, "novo": cia},
+                    "description": {"anterior": None, "novo": "[descrição sanitizada]"},
+                    "user_id": {"anterior": None, "novo": user_id},
+                },
+            )
+            for attachment in saved_attachments:
+                registrar_auditoria(
+                    acao=AuditAction.UPLOAD_ANEXO,
+                    modulo="Incidentes de segurança",
+                    entidade="IncidentAttachment",
+                    entidade_id=attachment.id,
+                    descricao=f"Anexo enviado para incidente {new_incident.id}: {attachment.original_filename}",
+                    alteracoes={
+                        "incident_id": {"anterior": None, "novo": new_incident.id},
+                        "original_filename": {"anterior": None, "novo": attachment.original_filename},
+                        "mime_type": {"anterior": None, "novo": attachment.mime_type},
+                        "file_size": {"anterior": None, "novo": attachment.file_size},
+                        "sha256": {"anterior": None, "novo": attachment.sha256},
+                        "uploaded_by_id": {"anterior": None, "novo": user_id},
+                    },
+                )
+
+            flash('Incidente registrado com sucesso.', 'success')
+            return redirect(url_for('incidente.incidents_list'))
+
+        return _render_incident_form_response(
+            title="Registro de Incidente",
+            unidades=unidades,
+            status_incident_list=status_incident_list,
+            incidents_types=incidents_types,
+            data_atual=data_atual,
+        )
         # Rota para registro de novo incidente
         if request.method == 'POST':
             # recebendo dados do formulário
@@ -163,6 +592,25 @@ def new_incident():
             # Adicionando e comitando no banco de dados
             db.session.add(new_incident)
             db.session.commit()
+            registrar_auditoria(
+                acao=AuditAction.CRIAR,
+                modulo="Incidentes de segurança",
+                entidade="Incidente",
+                entidade_id=new_incident.id,
+                descricao=f"Incidente criado: {new_incident.report_number}",
+                alteracoes={
+                    "status_incident": {"anterior": None, "novo": status_incident},
+                    "start_date": {"anterior": None, "novo": start_date},
+                    "incident_type": {"anterior": None, "novo": incident_type},
+                    "report_number": {"anterior": None, "novo": report_number},
+                    "ticket_number": {"anterior": None, "novo": ticket_number},
+                    "btl": {"anterior": None, "novo": btl},
+                    "cpa": {"anterior": None, "novo": cpa},
+                    "cia": {"anterior": None, "novo": cia},
+                    "description": {"anterior": None, "novo": description},
+                    "user_id": {"anterior": None, "novo": user_id},
+                },
+            )
             flash('Incidente registrado com sucesso!', 'success')
             
             return redirect(url_for('incidente.incidents_list')) #alterar para lista de incidentes
@@ -180,6 +628,202 @@ def new_incident():
 @incidente_bp.route("/incidente/<int:incident_id>/edit", methods=['GET', 'POST'])
 @login_required
 def edit_incident(incident_id): # Rota para editar um incidente
+    if not allowed_edit_profile(current_user):
+        current_app.logger.info(f"Usuario {current_user.id} tentou editar o incidente {incident_id}. Sem permiss?o. {current_user.profile}")
+        flash('Acesso negado: Voc? n?o tem permiss?o para editar este incidente.', 'danger')
+        return redirect(url_for('incidente.incident_view', incident_id=incident_id))
+
+    incident = Incidente.query.get_or_404(incident_id)
+    data_atual = _today_local_date()
+    unidades = Unidades.query.all()
+    status_incident_list = StatusIncidente.query.all()
+    incidents_types = _get_incident_types_for_form(incident.incident_type)
+
+    if request.method == 'POST':
+        original_data = {
+            'status_incident': incident.status_incident,
+            'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
+            'incident_type': incident.incident_type,
+            'report_number': incident.report_number,
+            'message_number': incident.message_number,
+            'ticket_number': incident.ticket_number,
+            'btl': incident.btl,
+            'cpa': incident.cpa,
+            'cia': incident.cia,
+            'description': incident.description,
+            'description_plain_text': incident.description_plain_text,
+        }
+        status_incident = request.form.get('status_incidente', '').strip()
+        registration_date = (request.form.get('registration_date') or request.form.get('start_data_hora', '')[:10]).strip()
+        incident_type = request.form.get('incident_type', '').strip()
+        report_number = request.form.get('report_number', '').strip()
+        message_number = request.form.get('message_number', '').strip()
+        ticket_number = request.form.get('ticket_number', '').strip()
+        btl = request.form.get('btl', '').strip()
+        cpa = request.form.get('cpa', '').strip()
+        cia = request.form.get('cia', '').strip()
+        raw_description = request.form.get('description', '')
+
+        if incident_type not in TIPOS_INCIDENTE_PERMITIDOS and incident_type != original_data['incident_type']:
+            flash('Tipo de incidente informado é inválido.', 'danger')
+            return _render_incident_form_response(
+                title="Editar Incidente",
+                unidades=unidades,
+                status_incident_list=status_incident_list,
+                incidents_types=_get_incident_types_for_form(incident_type),
+                data_atual=data_atual,
+                incident=_incident_edit_draft(incident),
+                edit_mode=True,
+                status_code=400,
+            )
+        try:
+            start_date = _parse_registration_date(registration_date)
+            description, description_plain_text = sanitize_incident_description(raw_description)
+        except (ValueError, SanitizationError) as exc:
+            flash(str(exc), 'danger')
+            return _render_incident_form_response(
+                title="Editar Incidente",
+                unidades=unidades,
+                status_incident_list=status_incident_list,
+                incidents_types=_get_incident_types_for_form(incident_type),
+                data_atual=data_atual,
+                incident=_incident_edit_draft(incident),
+                edit_mode=True,
+                status_code=400,
+            )
+        if not all([status_incident, registration_date, incident_type, report_number, btl, cpa, description_plain_text]):
+            missing_labels = []
+            if not status_incident:
+                missing_labels.append("Status")
+            if not registration_date:
+                missing_labels.append("Data de registro")
+            if not incident_type:
+                missing_labels.append("Tipo de incidente")
+            if not report_number:
+                missing_labels.append("Nº relatório")
+            if not btl:
+                missing_labels.append("Batalhão/unidade")
+            if not cpa:
+                missing_labels.append("CPA/Grande comando")
+            if not description_plain_text:
+                missing_labels.append("Descrição")
+            flash("Preencha os campos obrigatórios: " + ", ".join(missing_labels) + ".", 'danger')
+            return _render_incident_form_response(
+                title="Editar Incidente",
+                unidades=unidades,
+                status_incident_list=status_incident_list,
+                incidents_types=_get_incident_types_for_form(incident_type),
+                data_atual=data_atual,
+                incident=_incident_edit_draft(incident, description=description, description_plain_text=description_plain_text),
+                edit_mode=True,
+                status_code=400,
+            )
+
+        incident.status_incident = status_incident
+        incident.start_date = start_date
+        incident.incident_type = incident_type
+        incident.report_number = report_number
+        incident.message_number = message_number or None
+        incident.ticket_number = ticket_number or None
+        incident.btl = btl
+        incident.cpa = cpa
+        incident.cia = cia
+        incident.description = description
+        incident.description_plain_text = description_plain_text
+        if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
+            incident.end_date = datetime.now()
+
+        saved_attachments = []
+        try:
+            saved_attachments = save_incident_attachments(request.files.getlist('incident_attachments'), incident, current_user)
+            for attachment in saved_attachments:
+                db.session.add(attachment)
+            audit_changes = montar_alteracoes(
+                "Incidente",
+                original_data,
+                {
+                    'status_incident': incident.status_incident,
+                    'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
+                    'incident_type': incident.incident_type,
+                    'report_number': incident.report_number,
+                    'message_number': incident.message_number,
+                    'ticket_number': incident.ticket_number,
+                    'btl': incident.btl,
+                    'cpa': incident.cpa,
+                    'cia': incident.cia,
+                    'description': "[alterado]" if original_data['description'] != incident.description else original_data['description'],
+                    'description_plain_text': "[alterado]" if original_data['description_plain_text'] != incident.description_plain_text else original_data['description_plain_text'],
+                }
+            )
+            db.session.commit()
+        except AttachmentValidationError as exc:
+            form_incident = _incident_edit_draft(incident, description=description, description_plain_text=description_plain_text)
+            db.session.rollback()
+            flash(str(exc), 'danger')
+            return _render_incident_form_response(
+                title="Editar Incidente",
+                unidades=unidades,
+                status_incident_list=status_incident_list,
+                incidents_types=_get_incident_types_for_form(incident_type),
+                data_atual=data_atual,
+                incident=form_incident,
+                edit_mode=True,
+                status_code=400,
+            )
+        except Exception as exc:
+            form_incident = _incident_edit_draft(incident, description=description, description_plain_text=description_plain_text)
+            db.session.rollback()
+            for attachment in saved_attachments:
+                delete_attachment_file(attachment)
+            current_app.logger.exception("Falha ao editar incidente: %s", exc)
+            flash('Não foi possível editar o incidente.', 'danger')
+            return _render_incident_form_response(
+                title="Editar Incidente",
+                unidades=unidades,
+                status_incident_list=status_incident_list,
+                incidents_types=_get_incident_types_for_form(incident_type),
+                data_atual=data_atual,
+                incident=form_incident,
+                edit_mode=True,
+                status_code=500,
+            )
+
+        registrar_auditoria(
+            acao=AuditAction.EDITAR,
+            modulo="Incidentes de seguran?a",
+            entidade="Incidente",
+            entidade_id=incident.id,
+            descricao=f"Incidente editado: {incident.report_number}",
+            alteracoes=audit_changes,
+        )
+        for attachment in saved_attachments:
+            registrar_auditoria(
+                acao=AuditAction.UPLOAD_ANEXO,
+                modulo="Incidentes de seguran?a",
+                entidade="IncidentAttachment",
+                entidade_id=attachment.id,
+                descricao=f"Anexo enviado para incidente {incident.id}: {attachment.original_filename}",
+                alteracoes={
+                    "incident_id": {"anterior": None, "novo": incident.id},
+                    "original_filename": {"anterior": None, "novo": attachment.original_filename},
+                    "mime_type": {"anterior": None, "novo": attachment.mime_type},
+                    "file_size": {"anterior": None, "novo": attachment.file_size},
+                    "sha256": {"anterior": None, "novo": attachment.sha256},
+                    "uploaded_by_id": {"anterior": None, "novo": current_user.id},
+                },
+            )
+        flash('Incidente editado com sucesso!', 'success')
+        return redirect(url_for('incidente.incident_view', incident_id=incident_id))
+
+    return _render_incident_form_response(
+        title="Editar Incidente",
+        incident=incident,
+        edit_mode=True,
+        unidades=unidades,
+        status_incident_list=status_incident_list,
+        incidents_types=incidents_types,
+        data_atual=data_atual,
+    )
     
     
     #Função para tornar uma string snake_case (e.g., 'status_incident') em uma string amigável (e.g., 'Status Incident').
@@ -261,7 +905,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
                     changes.append(f"{friendly_name} alterado de '{original_str}' para '{new_str}'")
 
 
-            # 3. Atribui os novos valores ao objeto incident (GARANTINDO A ATRIBUIÇÃO DE STRINGS)
+            # 3. Atribui os novos valores ao objeto incident (GARANTINDO A ATRIBUI??O DE STRINGS)
             # Isso resolve o problema do 'datetime.datetime' persistente.
             incident.status_incident = new_values_map['status_incident']
             incident.start_date = new_values_map['start_date'] # AGORA É A STRING DO FORM
@@ -303,7 +947,30 @@ def edit_incident(incident_id): # Rota para editar um incidente
                 db.session.add(new_obs)
             
             # 6. Adicionando e comitando no banco de dados (o objeto incident já foi modificado)
+            audit_changes = montar_alteracoes(
+                "Incidente",
+                original_data,
+                {
+                    'status_incident': incident.status_incident,
+                    'start_date': incident.start_date.strftime(DATE_FORMAT) if incident.start_date else '',
+                    'incident_type': incident.incident_type,
+                    'report_number': incident.report_number,
+                    'ticket_number': incident.ticket_number,
+                    'btl': incident.btl,
+                    'cpa': incident.cpa,
+                    'cia': incident.cia,
+                    'description': incident.description,
+                }
+            )
             db.session.commit()
+            registrar_auditoria(
+                acao=AuditAction.EDITAR,
+                modulo="Incidentes de segurança",
+                entidade="Incidente",
+                entidade_id=incident.id,
+                descricao=f"Incidente editado: {incident.report_number}",
+                alteracoes=audit_changes,
+            )
             current_app.logger.info(f"Usuario {current_user.id} editou o incidente {incident_id}") # REGISTRANDO LOG
             flash('Incidente editado com sucesso!', 'success')
             return redirect(url_for('incidente.incident_view', incident_id=incident_id))
@@ -325,8 +992,162 @@ def delete_incident(incident_id):
     if allowed_edit_profile(current_user):
         # Rota para excluir um incidente
         incident = Incidente.query.get_or_404(incident_id)
+        report_number = incident.report_number
+        for attachment in list(incident.attachments or []):
+            delete_attachment_file(attachment)
         db.session.delete(incident)
         db.session.commit()
+        registrar_auditoria(
+            acao=AuditAction.EXCLUIR,
+            modulo="Incidentes de seguran?a",
+            entidade="Incidente",
+            entidade_id=incident_id,
+            descricao=f"Incidente exclu?do: {report_number}",
+        )
+        flash('Incidente exclu?do com sucesso!', 'success')
+        return redirect(url_for('incidente.incidents_list'))
+        data_atual = _today_local_date()
+        unidades = Unidades.query.all()
+        status_incident_list = StatusIncidente.query.all()
+        incidents_types = _get_incident_types_for_form(incident.incident_type)
+
+        if request.method == 'POST':
+            original_data = {
+                'status_incident': incident.status_incident,
+                'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
+                'incident_type': incident.incident_type,
+                'report_number': incident.report_number,
+                'message_number': incident.message_number,
+                'ticket_number': incident.ticket_number,
+                'btl': incident.btl,
+                'cpa': incident.cpa,
+                'cia': incident.cia,
+                'description': incident.description,
+                'description_plain_text': incident.description_plain_text,
+            }
+
+            status_incident = request.form.get('status_incidente', '').strip()
+            registration_date = (request.form.get('registration_date') or request.form.get('start_data_hora', '')[:10]).strip()
+            incident_type = request.form.get('incident_type', '').strip()
+            report_number = request.form.get('report_number', '').strip()
+            message_number = request.form.get('message_number', '').strip()
+            ticket_number = request.form.get('ticket_number', '').strip()
+            btl = request.form.get('btl', '').strip()
+            cpa = request.form.get('cpa', '').strip()
+            cia = request.form.get('cia', '').strip()
+            raw_description = request.form.get('description', '')
+
+            if incident_type not in TIPOS_INCIDENTE_PERMITIDOS and incident_type != original_data['incident_type']:
+                flash('Tipo de incidente informado ? inv?lido.', 'danger')
+                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
+
+            try:
+                start_date = _parse_registration_date(registration_date)
+                description, description_plain_text = sanitize_incident_description(raw_description)
+            except (ValueError, SanitizationError) as exc:
+                flash(str(exc), 'danger')
+                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
+
+            if not all([status_incident, registration_date, incident_type, report_number, btl, cpa, description_plain_text]):
+                flash('Erro: Os campos obrigat?rios devem ser preenchidos.', 'danger')
+                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
+
+            incident.status_incident = status_incident
+            incident.start_date = start_date
+            incident.incident_type = incident_type
+            incident.report_number = report_number
+            incident.message_number = message_number or None
+            incident.ticket_number = ticket_number or None
+            incident.btl = btl
+            incident.cpa = cpa
+            incident.cia = cia
+            incident.description = description
+            incident.description_plain_text = description_plain_text
+            if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
+                incident.end_date = datetime.now()
+
+            saved_attachments = []
+            try:
+                saved_attachments = save_incident_attachments(request.files.getlist('incident_attachments'), incident, current_user)
+                for attachment in saved_attachments:
+                    db.session.add(attachment)
+                audit_changes = montar_alteracoes(
+                    "Incidente",
+                    original_data,
+                    {
+                        'status_incident': incident.status_incident,
+                        'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
+                        'incident_type': incident.incident_type,
+                        'report_number': incident.report_number,
+                        'message_number': incident.message_number,
+                        'ticket_number': incident.ticket_number,
+                        'btl': incident.btl,
+                        'cpa': incident.cpa,
+                        'cia': incident.cia,
+                        'description': "[alterado]" if original_data['description'] != incident.description else original_data['description'],
+                        'description_plain_text': "[alterado]" if original_data['description_plain_text'] != incident.description_plain_text else original_data['description_plain_text'],
+                    }
+                )
+                db.session.commit()
+            except AttachmentValidationError as exc:
+                db.session.rollback()
+                flash(str(exc), 'danger')
+                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
+            except Exception as exc:
+                db.session.rollback()
+                for attachment in saved_attachments:
+                    delete_attachment_file(attachment)
+                current_app.logger.exception("Falha ao editar incidente: %s", exc)
+                flash('N?o foi poss?vel editar o incidente.', 'danger')
+                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
+
+            registrar_auditoria(
+                acao=AuditAction.EDITAR,
+                modulo="Incidentes de seguran?a",
+                entidade="Incidente",
+                entidade_id=incident.id,
+                descricao=f"Incidente editado: {incident.report_number}",
+                alteracoes=audit_changes,
+            )
+            for attachment in saved_attachments:
+                registrar_auditoria(
+                    acao=AuditAction.UPLOAD_ANEXO,
+                    modulo="Incidentes de seguran?a",
+                    entidade="IncidentAttachment",
+                    entidade_id=attachment.id,
+                    descricao=f"Anexo enviado para incidente {incident.id}: {attachment.original_filename}",
+                    alteracoes={
+                        "incident_id": {"anterior": None, "novo": incident.id},
+                        "original_filename": {"anterior": None, "novo": attachment.original_filename},
+                        "mime_type": {"anterior": None, "novo": attachment.mime_type},
+                        "file_size": {"anterior": None, "novo": attachment.file_size},
+                        "sha256": {"anterior": None, "novo": attachment.sha256},
+                        "uploaded_by_id": {"anterior": None, "novo": current_user.id},
+                    },
+                )
+            flash('Incidente editado com sucesso!', 'success')
+            return redirect(url_for('incidente.incident_view', incident_id=incident_id))
+
+        return render_template(
+            'incidente/new_incident.html',
+            title="Editar Incidente",
+            incident=incident,
+            edit_mode=True,
+            unidades=unidades,
+            status_incident_list=status_incident_list,
+            incidents_types=incidents_types,
+            data_atual=data_atual,
+        )
+        report_number = incident.report_number
+        db.session.delete(incident)
+        db.session.commit()
+        registrar_auditoria(
+            acao=AuditAction.EXCLUIR,
+            modulo="Incidentes de segurança",
+            entidade="Incidente",
+            entidade_id=incident_id,
+            descricao=f"Incidente excluído: {report_number}",
+        )
         flash('Incidente excluído com sucesso!', 'success')
         return redirect(url_for('incidente.incidents_list'))   
     else:
@@ -363,7 +1184,21 @@ def search_incident():
     
     resultados = query.filter(or_(*filters)).all()
     
-    return render_template('incidente/incidentes.html', title=f"Resultados da pesquisa para: {termo}", incidentes=resultados)
+    status_options = db.session.query(Incidente.status_incident).distinct().all()
+    return render_template(
+        'incidente/incidentes.html',
+        title=f"Incidentes de segurança - pesquisa: {termo}",
+        incidentes=resultados,
+        pagination=None,
+        total_incidents=len(resultados),
+        open_incidents=len([inc for inc in resultados if inc.status_incident != 'Encerrado']),
+        closed_incidents=len([inc for inc in resultados if inc.status_incident == 'Encerrado']),
+        status_options=status_options,
+        direction_filter='desc',
+        sort_by='start_date',
+        status_filter='todos',
+        termo=termo
+    )
 
     
 ################################################################################
@@ -371,7 +1206,7 @@ def search_incident():
 ################################################################################
 
 
-#=================================ADD OBSERVAÇÃO=================================
+#=================================ADD OBSERVA??O=================================
 @incidente_bp.route("/incidente/<int:incident_id>/add_obs", methods=['POST'])
 @login_required
 def add_obs(incident_id):
@@ -385,21 +1220,44 @@ def add_obs(incident_id):
         new_obs = IncidenteObs(incidente_id=incident_id, usuario_id=user_id, texto_observacao=texto_observacao, data_observacao=data_observacao)
         db.session.add(new_obs)
         db.session.commit()
+        registrar_auditoria(
+            acao=AuditAction.ADICIONAR_OBSERVACAO,
+            modulo="Incidentes de segurança",
+            entidade="IncidenteObs",
+            entidade_id=new_obs.id,
+            descricao=f"Observação adicionada ao incidente {incident_id}.",
+            alteracoes={
+                "texto_observacao": {"anterior": None, "novo": texto_observacao},
+                "incidente_id": {"anterior": None, "novo": incident_id},
+                "usuario_id": {"anterior": None, "novo": user_id},
+            },
+        )
         flash('Observação adicionada com sucesso!', 'success')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
     else:
         flash('Acesso negado: Você não tem permissão para inserir uma observação.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
-#=================================EXCLUIR OBSERVAÇÃO=================================
+#=================================EXCLUIR OBSERVA??O=================================
 @incidente_bp.route("/incidente/<int:incident_id>/delete_obs/<int:obs_id>", methods=['POST'])
 @login_required
 def delete_obs(incident_id, obs_id):
     # Rota para excluir observação
     obs = IncidenteObs.query.get_or_404(obs_id)
+    if obs.autor_obs != current_user and current_user.profile != 'Admin':
+        flash('Acesso negado: Você não tem permissão para excluir esta observação.', 'danger')
+        return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
+    obs_id_value = obs.id
     db.session.delete(obs)
     db.session.commit()
+    registrar_auditoria(
+        acao=AuditAction.EXCLUIR_OBSERVACAO,
+        modulo="Incidentes de segurança",
+        entidade="IncidenteObs",
+        entidade_id=obs_id_value,
+        descricao=f"Observação excluída do incidente {incident_id}.",
+    )
     flash('Observação excluida com sucesso!', 'success')
     return redirect(url_for('incidente.incident_view', incident_id=incident_id))
                     
@@ -410,7 +1268,69 @@ def delete_obs(incident_id, obs_id):
 def incident_view(incident_id):
     # Rota para visualizar detalhes de um incidente específico
     incidente = Incidente.query.get_or_404(incident_id)
-    return render_template('incidente/incidente_view.html', title="Detalhes do Incidente", incidente=incidente)
+    return_to = request.args.get("return_to", "")
+    return_url = return_to if _is_safe_internal_path(return_to) else url_for('incidente.incidents_list')
+    return render_template('incidente/incidente_view.html', title="Detalhes do Incidente", incidente=incidente, return_url=return_url, is_inline_attachment=_is_inline_attachment)
+
+
+@incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>", methods=['GET'])
+@login_required
+def open_attachment(incident_id, attachment_id):
+    Incidente.query.get_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    if not _is_inline_attachment(attachment):
+        return redirect(url_for('incidente.download_attachment', incident_id=incident_id, attachment_id=attachment_id))
+    path = resolve_attachment_path(attachment)
+    registrar_auditoria(
+        acao=AuditAction.DOWNLOAD_ANEXO,
+        modulo="Incidentes de segurança",
+        entidade="IncidentAttachment",
+        entidade_id=attachment.id,
+        descricao=f"Anexo aberto no navegador: {attachment.original_filename}",
+    )
+    response = send_file(path, mimetype=attachment.mime_type, as_attachment=False, download_name=attachment.original_filename)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>/download", methods=['GET'])
+@login_required
+def download_attachment(incident_id, attachment_id):
+    Incidente.query.get_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    path = resolve_attachment_path(attachment)
+    registrar_auditoria(
+        acao=AuditAction.DOWNLOAD_ANEXO,
+        modulo="Incidentes de segurança",
+        entidade="IncidentAttachment",
+        entidade_id=attachment.id,
+        descricao=f"Anexo baixado: {attachment.original_filename}",
+    )
+    response = send_file(path, mimetype=attachment.mime_type, as_attachment=True, download_name=attachment.original_filename)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>/delete", methods=['POST'])
+@login_required
+def delete_attachment(incident_id, attachment_id):
+    if not allowed_edit_profile(current_user):
+        abort(403)
+    Incidente.query.get_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    original_filename = attachment.original_filename
+    delete_attachment_file(attachment)
+    db.session.delete(attachment)
+    db.session.commit()
+    registrar_auditoria(
+        acao=AuditAction.EXCLUIR_ANEXO,
+        modulo="Incidentes de segurança",
+        entidade="IncidentAttachment",
+        entidade_id=attachment_id,
+        descricao=f"Anexo excluído do incidente {incident_id}: {original_filename}",
+    )
+    flash('Anexo excluído com sucesso.', 'success')
+    return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
 
 
@@ -454,20 +1374,22 @@ def dashboard_incidentes_cpa_btl():
         y='total',
         color='btl',
         title='',
-        labels={'cpa': 'Grande Comando', 'total': 'Incidentes'}
+        labels={'cpa': 'Grande Comando', 'total': 'Incidentes'},
+        color_discrete_sequence=['#06386d', '#0f5f9f', '#7fb7df', '#122033', '#0f7a4f']
     )
-    fig_bar.update_layout(barmode='stack')
-    bar_chart_html = fig_bar.to_html(full_html=False)
+    fig_bar.update_layout(barmode='stack', autosize=True, paper_bgcolor='white', plot_bgcolor='white', margin=dict(l=24, r=24, t=24, b=24))
+    bar_chart_html = fig_bar.to_html(full_html=False, config={'responsive': True, 'displayModeBar': False})
     
     return render_template(
         'dashboard/incidentes_cpa_btl.html',
-        title="Dashboard de Incidentes",
+        title="Dashboard incidentes",
         start_date= filters['start_date'],
         end_date= filters['end_date'],
         incidents_types=incidents_types,
         status=status,
         bar_chart_html=bar_chart_html,
-        filtros_aplicados=filters
+        filtros_aplicados=filters,
+        total_incidents=len(df_filtred_incidentes_opm)
         )
         
 @incidente_bp.route("/dashboard/incidentes_status", methods=['GET'])
@@ -500,10 +1422,12 @@ def dashboard_incidentes_status():
         values='total',
         names='status_incident',
         hole=0.6,
-        title='Incidentes por Status'
+        title='Incidentes por Status',
+        color_discrete_sequence=['#06386d', '#0f7a4f', '#a76500', '#b42318', '#7fb7df']
     )
     fig_donut.update_traces(textposition='outside', textinfo='percent+label')
-    donut_chart_html = fig_donut.to_html(full_html=False)
+    fig_donut.update_layout(autosize=True, paper_bgcolor='white', plot_bgcolor='white', margin=dict(l=24, r=24, t=48, b=24))
+    donut_chart_html = fig_donut.to_html(full_html=False, config={'responsive': True, 'displayModeBar': False})
     
     print(len(df_filtred))
     print(datetime.now())

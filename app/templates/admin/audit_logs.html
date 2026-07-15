@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Logs de auditoria', 'Consulta administrativa imutável das ações relevantes realizadas no backend.') }}
+
+<section class="app-card mb-4" aria-labelledby="audit-filter-title">
+    <div class="app-card__header">
+        <h2 id="audit-filter-title" class="h5 mb-0">Filtros</h2>
+    </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('admin.audit_logs') }}" class="filter-grid">
+            <div class="span-3">
+                <label for="start_date" class="form-label">Período inicial</label>
+                <input class="form-control" type="date" id="start_date" name="start_date" value="{{ filtros.get('start_date', '') }}">
+            </div>
+            <div class="span-3">
+                <label for="end_date" class="form-label">Período final</label>
+                <input class="form-control" type="date" id="end_date" name="end_date" value="{{ filtros.get('end_date', '') }}">
+            </div>
+            <div class="span-3">
+                <label for="usuario" class="form-label">Usuário</label>
+                <input class="form-control" type="text" id="usuario" name="usuario" value="{{ filtros.get('usuario', '') }}">
+            </div>
+            <div class="span-3">
+                <label for="acao" class="form-label">Ação</label>
+                <select class="form-select" id="acao" name="acao">
+                    <option value="">Todas</option>
+                    {% for action in action_options %}
+                        <option value="{{ action }}" {% if filtros.get('acao') == action %}selected{% endif %}>{{ action }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="modulo" class="form-label">Módulo</label>
+                <input class="form-control" type="text" id="modulo" name="modulo" value="{{ filtros.get('modulo', '') }}">
+            </div>
+            <div class="span-3">
+                <label for="resultado" class="form-label">Resultado</label>
+                <select class="form-select" id="resultado" name="resultado">
+                    <option value="">Todos</option>
+                    <option value="SUCESSO" {% if filtros.get('resultado') == 'SUCESSO' %}selected{% endif %}>SUCESSO</option>
+                    <option value="FALHA" {% if filtros.get('resultado') == 'FALHA' %}selected{% endif %}>FALHA</option>
+                    <option value="NEGADO" {% if filtros.get('resultado') == 'NEGADO' %}selected{% endif %}>NEGADO</option>
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="entidade" class="form-label">Entidade</label>
+                <input class="form-control" type="text" id="entidade" name="entidade" value="{{ filtros.get('entidade', '') }}">
+            </div>
+            <div class="span-3">
+                <label for="entidade_id" class="form-label">ID da entidade</label>
+                <input class="form-control" type="text" id="entidade_id" name="entidade_id" value="{{ filtros.get('entidade_id', '') }}">
+            </div>
+            <div class="span-12 d-flex flex-column flex-sm-row justify-content-end gap-2">
+                <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.audit_logs') }}">Limpar filtros</a>
+            </div>
+        </form>
+    </div>
+</section>
+
+{% if logs %}
+<section aria-label="Tabela de logs de auditoria">
+    <div class="app-table-wrap">
+        <table class="table app-table">
+            <thead>
+                <tr>
+                    <th>Data/hora UTC</th>
+                    <th>Usuário</th>
+                    <th>Ação</th>
+                    <th>Módulo</th>
+                    <th>Entidade</th>
+                    <th>Registro</th>
+                    <th>Resultado</th>
+                    <th>IP</th>
+                    <th>Detalhe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                    <td>{{ log.usuario_identificacao }}</td>
+                    <td><span class="app-badge app-badge--info">{{ log.acao }}</span></td>
+                    <td>{{ log.modulo }}</td>
+                    <td>{{ log.entidade or 'N/A' }}</td>
+                    <td>{{ log.entidade_id or 'N/A' }}</td>
+                    <td>{{ log.resultado }}</td>
+                    <td>{{ log.ip_address or 'N/A' }}</td>
+                    <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.audit_log_detail', log_id=log.id) }}">Abrir</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mobile-card-list">
+        {% for log in logs %}
+        <article class="mobile-record-card">
+            <div class="d-flex justify-content-between gap-3 align-items-start">
+                <div>
+                    <h2 class="h6 mb-1">{{ log.acao }}</h2>
+                    <p class="text-muted small mb-0">{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }} UTC</p>
+                </div>
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.audit_log_detail', log_id=log.id) }}">Abrir</a>
+            </div>
+            <dl class="record-meta">
+                <div><dt>Usuário</dt><dd>{{ log.usuario_identificacao }}</dd></div>
+                <div><dt>Módulo</dt><dd>{{ log.modulo }}</dd></div>
+                <div><dt>Resultado</dt><dd>{{ log.resultado }}</dd></div>
+                <div><dt>IP</dt><dd>{{ log.ip_address or 'N/A' }}</dd></div>
+            </dl>
+        </article>
+        {% endfor %}
+    </div>
+
+    {% if pagination.pages > 1 %}
+    <nav class="mt-4" aria-label="Paginação dos logs">
+        <ul class="pagination flex-wrap">
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.audit_logs', page=pagination.prev_num, **pagination_args) }}">Anterior</a>
+            </li>
+            <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages }}</span></li>
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.audit_logs', page=pagination.next_num, **pagination_args) }}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</section>
+{% else %}
+    {{ empty_state('Nenhum log encontrado', 'Ajuste os filtros ou aguarde novas ações auditáveis serem registradas.') }}
+{% endif %}
+{% endblock %}

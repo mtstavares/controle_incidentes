@@ -1,96 +1,165 @@
-# app/blueprints/users/routes.py
-
-from flask import render_template, url_for, flash, redirect, request, current_app
+from flask import current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required, login_user
+from sqlalchemy.exc import IntegrityError
+from app import db, lm
 from app.blueprints.users import users_bp
 from app.models import User
-from app import db, lm, hash
-from flask_login import login_user, current_user, login_required
+from app.services.audit_service import AuditAction, registrar_auditoria
+from app.services.authz import admin_required
+from app.services.user_service import (
+    email_existente,
+    gerar_hash_senha,
+    normalizar_email,
+    normalizar_nome,
+    normalizar_usuario,
+    senha_confere,
+    username_existente,
+    validar_dados_usuario,
+)
 
 
-@lm.user_loader # Função para carregar o usuário a partir do ID armazenado na sessão
+@lm.user_loader
 def user_loader(id):
-    user = db.session.query(User).filter_by(id=id).first()
-    return user
+    return db.session.query(User).filter_by(id=id).first()
 
 
-
-#Função para verificar se o perfil do usuário atual permite acesso a determinada rota
 def allowed_edit_profile(profile):
-    if profile.profile == 'Admin' or profile.profile == 'User':
-        return True
-    else:
-        return False
-    
+    return profile.profile in ["Admin", "User"]
 
-@users_bp.route("/register", methods=['GET', 'POST'])
+
+@users_bp.route("/register", methods=["GET", "POST"])
+@admin_required
 def register():
-    if current_user.profile == 'Admin':
-        # Rota para cadastrar um novo usuário
-        if request.method == 'GET':
-            return render_template('users/register_user.html', title="Registro de usuário")
-        elif request.method == 'POST':
-            username = request.form['username']
-            name = request.form['name']
-            email = request.form['email']
-            profile = request.form['profile']
-            password = request.form['password']
-            
-            new_user = User(username=username, name=name, email=email, profile=profile, password= hash(password))
-            db.session.add(new_user)
-            db.session.commit()
-                 
-            
-            current_app.logger.info(f" {current_user.username} cadastrou o usuário: {username}")
-            flash('Usuário cadastrado com sucesso!', 'success')
-            return redirect(url_for('users.login'))
-    else:
-        current_app.logger.info(f" {current_user.username} tentou cadastrar um usuário sem permissão.")
-        flash('Acesso negado: Apenas administradores podem cadastrar novos usuários.', 'danger')
-        return redirect(url_for('main.home'))
-        
-@users_bp.route("/login", methods=['GET', 'POST'])
+    form_data = {}
+    if request.method == "GET":
+        return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors={})
+
+    username = normalizar_usuario(request.form.get("username"))
+    name = normalizar_nome(request.form.get("name"))
+    email = normalizar_email(request.form.get("email"))
+    profile = (request.form.get("profile") or "").strip()
+    password = request.form.get("password") or ""
+    form_data = {"username": username, "name": name, "email": email, "profile": profile}
+
+    errors = validar_dados_usuario(username, name, email, profile, password)
+    if username and username_existente(username):
+        errors["username"] = "Já existe um usuário cadastrado com esse RE."
+    if email and email_existente(email):
+        errors["email"] = "Já existe um usuário cadastrado com esse e-mail."
+
+    if errors:
+        for message in errors.values():
+            flash(message, "danger")
+        return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors=errors)
+
+    new_user = User(
+        username=username,
+        name=name,
+        email=email,
+        profile=profile,
+        is_temp_password=True,
+        must_change_password=True,
+        password=gerar_hash_senha(password),
+    )
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        current_app.logger.exception("Falha de integridade ao criar usuário: %s", exc)
+        flash("Não foi possível criar o usuário. O RE ou e-mail já está cadastrado.", "danger")
+        return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors={})
+
+    registrar_auditoria(
+        acao=AuditAction.CRIAR_USUARIO,
+        modulo="Administração",
+        entidade="User",
+        entidade_id=new_user.id,
+        descricao=f"Usuário criado: {username}",
+        alteracoes={
+            "username": {"anterior": None, "novo": username},
+            "name": {"anterior": None, "novo": name},
+            "email": {"anterior": None, "novo": email},
+            "profile": {"anterior": None, "novo": profile},
+            "is_temp_password": {"anterior": None, "novo": True},
+            "must_change_password": {"anterior": None, "novo": True},
+        },
+    )
+    current_app.logger.info("%s cadastrou o usuário: %s", current_user.username, username)
+    flash("Usuário criado com sucesso.", "success")
+    return redirect(url_for("admin.gestao_usuarios"))
+
+
+@users_bp.route("/login", methods=["GET", "POST"])
 def login():
-    # Rota para fazer login de um usuário
-    if request.method == 'GET':
-        return render_template('users/login.html', title="Login de usuário")
-    elif request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        user = db.session.query(User).filter_by(username=username, password= hash(password)).first()
-        if not user:
-            current_app.logger.info(f" {username} tentou logar com usuario ousenha incorreta.") #REGISTRANDO LOG
-            flash('Nome de usuário ou senha incorretos.', 'danger')
-            return redirect(url_for('users.login'))
-        
-        login_user(user) # Loga o usuário se as credenciais estiverem corretas
-        
-        # Verifica se o usuário possui uma senha temporaria
-        if user.is_temp_password:
-            current_app.logger.info(f" {user.username} logou com uma senha temporária.") #REGISTRANDO LOG
-            return redirect(url_for('users.change_password'))
-        
-        current_app.logger.info(f" {user.username} logou no sistema.") #REGISTRANDO LOG
-        return redirect(url_for('incidente.dashboard_incidentes_status'))
-    
-@users_bp.route("/change_password", methods=['GET', 'POST'])
+    if request.method == "GET":
+        return render_template("users/login.html", title="Login de usuário")
+
+    username = normalizar_usuario(request.form.get("username"))
+    password = request.form.get("password") or ""
+    user = db.session.query(User).filter(db.func.lower(User.username) == username.lower()).first()
+
+    if not user or not senha_confere(user, password):
+        registrar_auditoria(
+            acao=AuditAction.LOGIN_FALHOU,
+            modulo="Autenticação",
+            descricao=f"Tentativa de login malsucedida para usuário: {username}",
+            resultado="FALHA",
+            usuario=None,
+        )
+        current_app.logger.info("%s tentou logar com usuário ou senha incorreta.", username)
+        flash("Nome de usuário ou senha incorretos.", "danger")
+        return redirect(url_for("users.login"))
+
+    login_user(user)
+    registrar_auditoria(
+        acao=AuditAction.LOGIN,
+        modulo="Autenticação",
+        descricao=f"Login bem-sucedido para usuário: {user.username}",
+        usuario=user,
+    )
+
+    if user.must_change_password or user.is_temp_password:
+        current_app.logger.info("%s logou com senha temporária.", user.username)
+        return redirect(url_for("users.change_password"))
+
+    current_app.logger.info("%s logou no sistema.", user.username)
+    return redirect(url_for("incidente.dashboard_incidentes_status"))
+
+
+@users_bp.route("/change_password", methods=["GET", "POST"])
 @login_required
 def change_password():
-    if request.method =='POST':
-        new_password = request.form['new_password']
-        confirm_password = request.form['confirm_password']
+    if request.method == "POST":
+        new_password = request.form.get("new_password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
 
         if not new_password or new_password != confirm_password:
-            flash('As senhas devem ser iguais.', 'danger')
-            return redirect(url_for('users.change_password'))
+            flash("As senhas devem ser iguais.", "danger")
+            return redirect(url_for("users.change_password"))
+        if len(new_password) < 8 or len(new_password) > 128:
+            flash("A senha deve ter entre 8 e 128 caracteres.", "danger")
+            return redirect(url_for("users.change_password"))
 
-        current_user.password = hash(new_password)
+        temp_password_before = current_user.is_temp_password
+        must_change_before = current_user.must_change_password
+        current_user.password = gerar_hash_senha(new_password)
         current_user.is_temp_password = False
+        current_user.must_change_password = False
         db.session.commit()
-        current_app.logger.info(f" {current_user.username} alterou sua senha.")
-        flash('Senha alterada com sucesso!', 'success')
-        return redirect(url_for('main.home'))
-    
-    return render_template('users/change_psw.html', title="Alteração de senha")
-    
-        
+        registrar_auditoria(
+            acao=AuditAction.ALTERAR_SENHA,
+            modulo="Autenticação",
+            entidade="User",
+            entidade_id=current_user.id,
+            descricao="Usuário alterou a própria senha.",
+            alteracoes={
+                "is_temp_password": {"anterior": temp_password_before, "novo": False},
+                "must_change_password": {"anterior": must_change_before, "novo": False},
+            },
+        )
+        current_app.logger.info("%s alterou sua senha.", current_user.username)
+        flash("Senha alterada com sucesso!", "success")
+        return redirect(url_for("main.home"))
+
+    return render_template("users/change_psw.html", title="Alteração de senha")

@@ -1,54 +1,49 @@
 {% extends "base.html" %}
+{% from 'components/macros.html' import page_header, field_hint %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card mt-5">
-            <div class="card-header text-center">
-                <h3>Registro de Usuário</h3>
+{{ page_header('Cadastrar usuário', 'Crie credenciais para acesso ao sistema conforme o perfil operacional autorizado.') }}
+
+<section class="app-card">
+    <div class="app-card__body">
+        <form method="POST" action="#" data-prevent-duplicate>
+            <div class="form-grid">
+                <div class="span-6">
+                    <label for="username" class="form-label">Usuário (RE) <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="text" class="form-control" id="username" name="username" value="{{ form_data.username if form_data else '' }}" required aria-required="true" autocomplete="username">
+                    {{ field_hint('Identificador usado no login.') }}
+                </div>
+                <div class="span-6">
+                    <label for="name" class="form-label">Nome completo <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ form_data.name if form_data else '' }}" required aria-required="true" autocomplete="name">
+                </div>
+                <div class="span-6">
+                    <label for="email" class="form-label">E-mail <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input type="email" class="form-control" id="email" name="email" value="{{ form_data.email if form_data else '' }}" required aria-required="true" autocomplete="email">
+                </div>
+                <div class="span-6">
+                    <label for="profile" class="form-label">Perfil <span class="required-mark" aria-hidden="true">*</span></label>
+                    <select class="form-select" id="profile" name="profile" required aria-required="true">
+                        <option value="">Selecione</option>
+                        <option value="Admin" {% if form_data and form_data.profile == 'Admin' %}selected{% endif %}>Admin</option>
+                        <option value="User" {% if form_data and form_data.profile == 'User' %}selected{% endif %}>User</option>
+                        <option value="Viewer" {% if form_data and form_data.profile == 'Viewer' %}selected{% endif %}>Viewer</option>
+                    </select>
+                </div>
+                <div class="span-6">
+                    <label for="password" class="form-label">Senha temporária <span class="required-mark" aria-hidden="true">*</span></label>
+                    <div class="password-field">
+                        <input type="password" class="form-control" id="password" name="password" required aria-required="true" autocomplete="new-password">
+                        <button class="btn btn-outline-secondary" type="button" data-toggle-password="password" aria-pressed="false">Mostrar</button>
+                    </div>
+                    {{ field_hint('O usuário será direcionado para troca de senha quando aplicável.') }}
+                </div>
+                <div class="span-12 d-flex flex-column flex-sm-row gap-2 justify-content-end">
+                    <a href="{{ url_for('admin.gestao_usuarios') }}" class="btn btn-outline-secondary">Cancelar</a>
+                    <button type="submit" class="btn btn-primary" data-loading-text="Registrando...">Registrar usuário</button>
+                </div>
             </div>
-            <div class="card-body">
-                <form method="POST" action="#">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Usuário (RE)</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="name" class="form-label">Nome</label>
-                        <input type="text" class="form-control" id="name" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="profile" class="form-label">Perfil</label>
-                        <select class="form-select" name="profile" aria-label="Default select example" >
-                            <option selected></option>
-                            
-                            <option value="Admin">Admin</option>
-                            <option value="User">User</option>
-                            <option value="Viewer">Viewer</option>
-                            
-                            </option>
-                                              
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Senha</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-success">Registrar</button>
-                    </div>
-                </form>
-            </div>
-            <div class="card-footer text-center">
-                <small class="text-muted">
-                    Já tem uma conta? <a href="{{ url_for('users.login') }}">Faça login</a>
-                </small>
-            </div>
-        </div>
+        </form>
     </div>
-</div>
+</section>
 {% endblock %}

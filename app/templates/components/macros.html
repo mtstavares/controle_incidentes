@@ -1,0 +1,45 @@
+{% macro status_badge(status) -%}
+  {% set normalized = (status or '')|lower %}
+  {% if 'encerrado' in normalized %}
+    {% set tone = 'success' %}
+  {% elif 'mitiga' in normalized %}
+    {% set tone = 'danger' %}
+  {% elif 'an' in normalized %}
+    {% set tone = 'warning' %}
+  {% elif 'falso' in normalized %}
+    {% set tone = 'muted' %}
+  {% else %}
+    {% set tone = 'info' %}
+  {% endif %}
+  <span class="app-badge app-badge--{{ tone }}">{{ status or 'Sem status' }}</span>
+{%- endmacro %}
+
+{% macro page_header(title, subtitle='', action_href='', action_label='') -%}
+  <section class="page-heading" aria-labelledby="page-title">
+    <div>
+      <p class="eyebrow">DivCiber</p>
+      <h1 id="page-title">{{ title }}</h1>
+      {% if subtitle %}
+        <p class="page-heading__subtitle">{{ subtitle }}</p>
+      {% endif %}
+    </div>
+    {% if action_href and action_label %}
+      <a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>
+    {% endif %}
+  </section>
+{%- endmacro %}
+
+{% macro empty_state(title, message, action_href='', action_label='') -%}
+  <div class="empty-state" role="status">
+    <div class="empty-state__mark" aria-hidden="true"></div>
+    <h2>{{ title }}</h2>
+    <p>{{ message }}</p>
+    {% if action_href and action_label %}
+      <a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro field_hint(text) -%}
+  {% if text %}<p class="field-hint">{{ text }}</p>{% endif %}
+{%- endmacro %}
