@@ -346,7 +346,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            return `/incidentes/pesquisa${params.toString()}`;
+            const queryString = params.toString();
+            return queryString ? `/incidentes/pesquisa?${queryString}` : '/incidentes/pesquisa';
         };
 
         const updateBrowserUrl = function () {
@@ -389,8 +390,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 const response = await fetch(buildSearchUrl(pageUrl), {
                     method: 'GET',
                     headers: {
+                        'Accept': 'text/html; charset=utf-8',
                         'X-Requested-With': 'XMLHttpRequest'
                     },
+                    credentials: 'same-origin',
                     signal: activeController.signal
                 });
 
@@ -402,7 +405,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateBrowserUrl();
             } catch (error) {
                 if (error.name !== 'AbortError') {
-                    showApplicationNotification('N?o foi poss?vel pesquisar os incidentes.', 'danger');
+                    showApplicationNotification('Não foi possível pesquisar os incidentes.', 'danger');
                 }
             } finally {
                 incidentResults.setAttribute('aria-busy', 'false');

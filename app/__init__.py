@@ -38,6 +38,8 @@ def create_app(config_class=ProductionConfig):
     app.config.setdefault("JSON_AS_ASCII", False)
     app.config.setdefault("JSONIFY_MIMETYPE", "application/json; charset=utf-8")
     app.config.setdefault("TIMEZONE", "America/Sao_Paulo")
+    if hasattr(app, "json"):
+        app.json.ensure_ascii = False
     
     os.makedirs(app.instance_path, exist_ok=True)
     os.makedirs('logs', exist_ok=True)

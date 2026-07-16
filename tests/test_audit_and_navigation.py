@@ -5,7 +5,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from app import create_app, db, hash
-from app.models import AuditLog, Incidente, IncidenteObs, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
+from app.models import AuditLog, Incidente, IncidenteObs, IncidentAttachment, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
 
 
@@ -246,6 +246,84 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         unsafe_detail = self.client.get(f"/incidente/{incident.id}?return_to=https://evil.example").get_data(as_text=True)
         self.assertIn('href="/incidentes"', unsafe_detail)
         self.assertNotIn("evil.example", unsafe_detail)
+
+    def test_incident_search_covers_text_relations_attachments_and_safe_terms(self):
+        self.login("user", "user123")
+        command = OrganizationalCommand(name="CPA/M-5", active=True, sort_order=2)
+        db.session.add(command)
+        db.session.flush()
+        unit = OrganizationalUnit(
+            command_id=command.id,
+            name="23º BPM/M",
+            normalized_name="23 bpm/m",
+            active=True,
+            sort_order=23,
+        )
+        db.session.add(unit)
+        db.session.flush()
+        incident = Incidente(
+            status_incident="Em Análise",
+            start_date=datetime(2026, 7, 16, 17, 45, 33),
+            incident_type="Comprometimento de Credenciais",
+            report_number="028/150/26",
+            message_number="DTIC-240/150/26",
+            ticket_number="RDS1403992",
+            cpa=command.name,
+            btl=unit.name,
+            cia="SDSA",
+            description="<p>Não foi possível ignorar phishing e VPN.</p>",
+            description_plain_text="Não foi possível ignorar phishing e VPN.",
+            user_id=User.query.filter_by(username="user").first().id,
+            command_id=command.id,
+            unit_id=unit.id,
+        )
+        db.session.add(incident)
+        db.session.flush()
+        db.session.add(IncidenteObs(
+            texto_observacao="Observação de segurança com IP 192.168.10.5",
+            usuario_id=incident.user_id,
+            incidente_id=incident.id,
+        ))
+        db.session.add(IncidentAttachment(
+            incident_id=incident.id,
+            original_filename="evidencia_credencial_23bpm.pdf",
+            stored_filename="evidencia_credencial_23bpm.pdf",
+            mime_type="application/pdf",
+            file_size=1234,
+            sha256="a" * 64,
+            uploaded_by_id=incident.user_id,
+            uploaded_at=datetime.now(timezone.utc),
+        ))
+        db.session.commit()
+
+        matching_terms = [
+            "PHISHING",
+            "cred",
+            "150/26",
+            "DTIC-240",
+            "RDS140",
+            "CPA/M-5",
+            "23º BPM/M",
+            "192.168",
+            "evidencia_credencial",
+            "User Teste",
+            "nao foi possivel",
+        ]
+        for term in matching_terms:
+            response = self.client.get(f"/incidentes/pesquisa?q={term}")
+            self.assertEqual(response.status_code, 200, term)
+            self.assertIn("028/150/26", response.get_data(as_text=True), term)
+
+        for term in ["%", "_", "'", "\"", "/", "\\", "<", ">", "&"]:
+            response = self.client.get("/incidentes/pesquisa", query_string={"q": term})
+            self.assertEqual(response.status_code, 200, term)
+            self.assertNotIn("<script", response.get_data(as_text=True).lower())
+
+        empty = self.client.get("/incidentes/pesquisa?q=termo-sem-resultado").get_data(as_text=True)
+        self.assertIn("Nenhum incidente encontrado", empty)
+
+        normal_listing = self.client.get("/incidentes/pesquisa?q=").get_data(as_text=True)
+        self.assertIn("028/150/26", normal_listing)
 
     def test_consolidated_incident_dashboard_page_and_api(self):
         self.login("admin", "admin123")

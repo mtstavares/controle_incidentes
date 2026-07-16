@@ -7,10 +7,12 @@ from app import db
 from flask_login import login_required, current_user
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, cast, func, or_
 from urllib.parse import urlsplit
 from types import SimpleNamespace
+import unicodedata
 import plotly.express as px
+from werkzeug.exceptions import HTTPException
 from app.blueprints.users.routes import allowed_edit_profile
 from app.services.audit_service import AuditAction, montar_alteracoes, registrar_auditoria
 from app.services.attachment_service import (
@@ -133,6 +135,14 @@ SORTABLE_INCIDENT_FIELDS = {
     "incident_type": Incidente.incident_type,
     "report_number": Incidente.report_number,
 }
+SEARCH_ACCENT_MAP = (
+    ("á", "a"), ("à", "a"), ("â", "a"), ("ã", "a"), ("ä", "a"),
+    ("é", "e"), ("è", "e"), ("ê", "e"), ("ë", "e"),
+    ("í", "i"), ("ì", "i"), ("î", "i"), ("ï", "i"),
+    ("ó", "o"), ("ò", "o"), ("ô", "o"), ("õ", "o"), ("ö", "o"),
+    ("ú", "u"), ("ù", "u"), ("û", "u"), ("ü", "u"),
+    ("ç", "c"), ("ñ", "n"),
+)
 
 
 def _is_safe_internal_path(path):
@@ -191,6 +201,88 @@ def _filter_values_with_legacy(value):
     values = [value]
     values.extend(LEGACY_TEXT_VARIANTS.get(value, []))
     return values
+
+
+def _escape_like(value):
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _normalize_for_search(value):
+    normalized = unicodedata.normalize("NFKD", value or "")
+    return "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+
+
+def _unaccent_sql_expression(column):
+    expression = func.lower(cast(column, String))
+    for accented, plain in SEARCH_ACCENT_MAP:
+        expression = func.replace(expression, accented, plain)
+        expression = func.replace(expression, accented.upper(), plain)
+    return expression
+
+
+def _search_match(column, search_value):
+    escaped_value = _escape_like(search_value)
+    escaped_normalized = _escape_like(_normalize_for_search(search_value))
+    return or_(
+        cast(column, String).ilike(f"%{escaped_value}%", escape="\\"),
+        _unaccent_sql_expression(column).like(f"%{escaped_normalized}%", escape="\\"),
+    )
+
+
+def _incident_search_predicate(search_value):
+    searchable_fields = [
+        Incidente.id,
+        Incidente.incident_type,
+        Incidente.report_number,
+        Incidente.message_number,
+        Incidente.ticket_number,
+        Incidente.status_incident,
+        Incidente.cpa,
+        Incidente.btl,
+        Incidente.cia,
+        Incidente.description,
+        Incidente.description_plain_text,
+        Incidente.start_date,
+        Incidente.end_date,
+        Incidente.created_at,
+        Incidente.updated_at,
+    ]
+    predicates = [_search_match(field, search_value) for field in searchable_fields]
+    predicates.extend([
+        Incidente.autor.has(or_(
+            _search_match(User.name, search_value),
+            _search_match(User.username, search_value),
+            _search_match(User.email, search_value),
+        )),
+        Incidente.command.has(_search_match(OrganizationalCommand.name, search_value)),
+        Incidente.unit.has(_search_match(OrganizationalUnit.name, search_value)),
+        Incidente.obs_incidente.any(or_(
+            _search_match(IncidenteObs.texto_observacao, search_value),
+            _search_match(IncidenteObs.data_observacao, search_value),
+            IncidenteObs.autor_obs.has(or_(
+                _search_match(User.name, search_value),
+                _search_match(User.username, search_value),
+                _search_match(User.email, search_value),
+            )),
+        )),
+        Incidente.attachments.any(or_(
+            _search_match(IncidentAttachment.original_filename, search_value),
+            _search_match(IncidentAttachment.mime_type, search_value),
+            _search_match(IncidentAttachment.sha256, search_value),
+        )),
+    ])
+    return or_(*predicates)
+
+
+def _log_incident_search_failure(search_value):
+    current_app.logger.exception(
+        "incident_search_failed",
+        extra={
+            "event": "incident_search_failed",
+            "user_id": getattr(current_user, "id", None),
+            "search_length": len(search_value or ""),
+        },
+    )
 
 
 def _incident_draft_from_form(description=None, description_plain_text=""):
@@ -298,36 +390,7 @@ def _build_incidents_query():
         query = query.filter(Incidente.status_incident == status_filter)
 
     if termo:
-        padrao = f"%{termo}%"
-        query = query.filter(or_(
-            cast(Incidente.id, String).ilike(padrao),
-            Incidente.incident_type.ilike(padrao),
-            Incidente.report_number.ilike(padrao),
-            Incidente.message_number.ilike(padrao),
-            Incidente.ticket_number.ilike(padrao),
-            Incidente.status_incident.ilike(padrao),
-            Incidente.cpa.ilike(padrao),
-            Incidente.btl.ilike(padrao),
-            Incidente.cia.ilike(padrao),
-            Incidente.description_plain_text.ilike(padrao),
-            cast(Incidente.start_date, String).ilike(padrao),
-            cast(Incidente.end_date, String).ilike(padrao),
-            Incidente.autor.has(or_(
-                User.name.ilike(padrao),
-                User.username.ilike(padrao),
-                User.email.ilike(padrao),
-            )),
-            Incidente.obs_incidente.any(or_(
-                IncidenteObs.texto_observacao.ilike(padrao),
-                cast(IncidenteObs.data_observacao, String).ilike(padrao),
-                IncidenteObs.autor_obs.has(or_(
-                    User.name.ilike(padrao),
-                    User.username.ilike(padrao),
-                    User.email.ilike(padrao),
-                )),
-            )),
-            Incidente.attachments.any(IncidentAttachment.original_filename.ilike(padrao)),
-        ))
+        query = query.filter(_incident_search_predicate(termo))
 
     sort_column = SORTABLE_INCIDENT_FIELDS.get(sort_by, Incidente.start_date)
     if direction_filter == 'asc':
@@ -392,7 +455,15 @@ def format_timedelta(td):
 @incidente_bp.route("/incidentes", methods=['GET'])
 @login_required
 def incidents_list():
-    incidentes, pagination, filters = _render_incident_list_context()
+    try:
+        incidentes, pagination, filters = _render_incident_list_context()
+    except HTTPException:
+        raise
+    except Exception:
+        search_value = request.args.get('q', '').strip()
+        _log_incident_search_failure(search_value)
+        flash("Não foi possível pesquisar os incidentes.", "danger")
+        return redirect(url_for("incidente.incidents_list"))
     total_incidents = Incidente.query.count()
     open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
     closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
@@ -415,7 +486,23 @@ def incidents_list():
 @incidente_bp.route("/incidentes/pesquisa", methods=['GET'])
 @login_required
 def search_incidents():
-    incidentes, pagination, filters = _render_incident_list_context()
+    try:
+        incidentes, pagination, filters = _render_incident_list_context()
+    except HTTPException:
+        raise
+    except Exception:
+        search_value = request.args.get('q', '').strip()
+        _log_incident_search_failure(search_value)
+        return render_template(
+            'incidente/_incident_list.html',
+            incidentes=[],
+            pagination=None,
+            status_filter=request.args.get('status_filter'),
+            direction_filter=request.args.get('direction', 'desc'),
+            sort_by=request.args.get('sort_by', 'start_date'),
+            q=search_value,
+            search_error=True,
+        ), 500
     return render_template(
         'incidente/_incident_list.html',
         incidentes=incidentes,
