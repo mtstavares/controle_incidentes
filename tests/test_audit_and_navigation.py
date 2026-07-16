@@ -435,33 +435,37 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertIn("Phishing", form_html)
         self.assertIn("Brute Force", form_html)
 
-        response = self.client.post(
-            "/incidente/new",
-            data={
-                "status_incidente": "Em Análise",
-                "registration_date": "2026-07-14",
-                "incident_type": "Phishing",
-                "report_number": "123/150/26",
-                "message_number": "MSG-123",
-                "ticket_number": "INC-987",
-                "btl": "BTL Teste",
-                "cpa": "CPA Teste",
-                "cia": "1 CIA",
-                "description": (
-                    "<div style=\"text-align: center\"><font face=\"Arial\" size=\"5\" color=\"#b42318\">Texto rico</font></div>"
-                    "<p><b>Negrito</b> <i>Itálico</i> <u>Sublinhado</u> <strike>Tachado</strike></p>"
-                    "<p><span style=\"color: rgb(23, 92, 211); background-color: rgb(220, 250, 230);\">Cores</span></p>"
-                    "<ul><li>Item de lista</li></ul><script>alert(1)</script>"
-                ),
-                "incident_attachments": (BytesIO(b"%PDF-1.4\n%test\n"), "relatorio.pdf"),
-            },
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
+        with patch(
+            "app.blueprints.incidente.routes._server_registration_timestamp",
+            return_value=datetime(2026, 7, 14, 14, 37, 51),
+        ):
+            response = self.client.post(
+                "/incidente/new",
+                data={
+                    "status_incidente": "Em Análise",
+                    "registration_date": "2026-07-14",
+                    "incident_type": "Phishing",
+                    "report_number": "123/150/26",
+                    "message_number": "MSG-123",
+                    "ticket_number": "INC-987",
+                    "btl": "BTL Teste",
+                    "cpa": "CPA Teste",
+                    "cia": "1 CIA",
+                    "description": (
+                        "<div style=\"text-align: center\"><font face=\"Arial\" size=\"5\" color=\"#b42318\">Texto rico</font></div>"
+                        "<p><b>Negrito</b> <i>Itálico</i> <u>Sublinhado</u> <strike>Tachado</strike></p>"
+                        "<p><span style=\"color: rgb(23, 92, 211); background-color: rgb(220, 250, 230);\">Cores</span></p>"
+                        "<ul><li>Item de lista</li></ul><script>alert(1)</script>"
+                    ),
+                    "incident_attachments": (BytesIO(b"%PDF-1.4\n%test\n"), "relatorio.pdf"),
+                },
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
         self.assertIn("Incidente registrado com sucesso", response.get_data(as_text=True))
         incident = Incidente.query.filter_by(report_number="123/150/26").first()
         self.assertIsNotNone(incident)
-        self.assertEqual(incident.start_date.strftime("%H:%M:%S"), "00:00:00")
+        self.assertEqual(incident.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-14 14:37:51")
         self.assertEqual(incident.message_number, "MSG-123")
         self.assertEqual(incident.ticket_number, "INC-987")
         self.assertIn("<font", incident.description)
@@ -481,6 +485,46 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.headers.get("X-Content-Type-Options"), "nosniff")
         self.assertIsNotNone(AuditLog.query.filter_by(acao="DOWNLOAD_ANEXO", entidade_id=str(attachment.id)).first())
+
+    def test_incident_registration_uses_server_time_for_same_day_ordering(self):
+        self.login("user", "user123")
+        base_payload = {
+            "status_incidente": "Em Análise",
+            "registration_date": "2026-07-16",
+            "incident_type": "Phishing",
+            "message_number": "MSG-ORDER",
+            "ticket_number": "INC-ORDER",
+            "btl": "BTL Teste",
+            "cpa": "CPA Teste",
+            "cia": "1 CIA",
+            "description": "<p>Ordenação por timestamp completo</p>",
+        }
+
+        with patch(
+            "app.blueprints.incidente.routes._server_registration_timestamp",
+            return_value=datetime(2026, 7, 16, 8, 5, 1),
+        ):
+            self.client.post("/incidente/new", data={**base_payload, "report_number": "REL-EARLY"})
+
+        with patch(
+            "app.blueprints.incidente.routes._server_registration_timestamp",
+            return_value=datetime(2026, 7, 16, 17, 45, 33),
+        ):
+            self.client.post("/incidente/new", data={**base_payload, "report_number": "REL-LATE"})
+
+        early = Incidente.query.filter_by(report_number="REL-EARLY").first()
+        late = Incidente.query.filter_by(report_number="REL-LATE").first()
+        self.assertEqual(early.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 08:05:01")
+        self.assertEqual(late.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 17:45:33")
+
+        html = self.client.get("/incidentes").get_data(as_text=True)
+        self.assertLess(html.index("REL-LATE"), html.index("REL-EARLY"))
+        self.assertIn("16/07/2026", html)
+        self.assertNotIn("17:45:33", html)
+
+        audit = AuditLog.query.filter_by(acao="CRIAR", entidade="Incidente", entidade_id=str(late.id)).first()
+        self.assertIn("17:45:33", audit.descricao)
+        self.assertEqual(audit.alteracoes["start_date"]["novo"], "2026-07-16 17:45:33")
 
     def test_incident_form_errors_keep_submitted_values_and_show_specific_message(self):
         self.login("user", "user123")
@@ -528,27 +572,31 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
 
     def test_utf8_temporal_integrity_and_audit_rollback(self):
         self.login("user", "user123")
-        response = self.client.post("/incidente/new", data={
-            "status_incidente": "Em Análise",
-            "registration_date": "2026-07-15",
-            "incident_type": "Transferência de arquivo malicioso",
-            "report_number": "Número do relatório",
-            "message_number": "MSG-UTF8",
-            "ticket_number": "Quebra de Confidencialidade",
-            "btl": "BTL Teste",
-            "cpa": "CPA Teste",
-            "cia": "Incidente envolvendo VPN corporativa",
-            "description": "<p>Descrição com ç, ã, é, ó e Transferência</p>",
-            "timestamp": "1999-01-01T00:00:00Z",
-            "created_at": "1999-01-01T00:00:00Z",
-            "updated_at": "1999-01-01T00:00:00Z",
-        }, follow_redirects=True)
+        with patch(
+            "app.blueprints.incidente.routes._server_registration_timestamp",
+            return_value=datetime(2026, 7, 15, 8, 9, 10),
+        ):
+            response = self.client.post("/incidente/new", data={
+                "status_incidente": "Em Análise",
+                "registration_date": "2026-07-15",
+                "incident_type": "Transferência de arquivo malicioso",
+                "report_number": "Número do relatório",
+                "message_number": "MSG-UTF8",
+                "ticket_number": "Quebra de Confidencialidade",
+                "btl": "BTL Teste",
+                "cpa": "CPA Teste",
+                "cia": "Incidente envolvendo VPN corporativa",
+                "description": "<p>Descrição com ç, ã, é, ó e Transferência</p>",
+                "timestamp": "1999-01-01T00:00:00Z",
+                "created_at": "1999-01-01T00:00:00Z",
+                "updated_at": "1999-01-01T00:00:00Z",
+            }, follow_redirects=True)
         html = response.get_data(as_text=True)
         self.assertIn("Incidente registrado com sucesso", html)
 
         incident = Incidente.query.filter_by(message_number="MSG-UTF8").first()
         self.assertIsNotNone(incident)
-        self.assertEqual(incident.start_date.strftime("%H:%M:%S"), "00:00:00")
+        self.assertEqual(incident.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-15 08:09:10")
         self.assertIsNotNone(incident.created_at)
         self.assertIsNotNone(incident.updated_at)
         self.assertNotEqual(incident.created_at.year, 1999)

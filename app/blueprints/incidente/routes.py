@@ -163,10 +163,21 @@ def _today_local_date():
 
 def _parse_registration_date(value):
     try:
-        parsed = datetime.strptime((value or "").strip(), "%Y-%m-%d")
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError("Formato de data inválido.") from exc
-    return parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _server_registration_timestamp(value):
+    selected_date = _parse_registration_date(value)
+    local_now = datetime.now(SAO_PAULO_TZ)
+    return datetime.combine(selected_date, local_now.time()).replace(microsecond=0, tzinfo=None)
+
+
+def _preserve_registration_time(value, current_start_date=None):
+    selected_date = _parse_registration_date(value)
+    current_time = current_start_date.time() if current_start_date else datetime.min.time()
+    return datetime.combine(selected_date, current_time).replace(microsecond=0, tzinfo=None)
 
 
 def _get_incident_types_for_form(current_value=None):
@@ -212,7 +223,7 @@ def _incident_draft_from_form(description=None, description_plain_text=""):
 def _apply_form_to_incident_like(target, *, description, description_plain_text):
     target.status_incident = request.form.get("status_incidente", "").strip()
     registration_date = (request.form.get("registration_date") or request.form.get("start_data_hora", "")[:10]).strip()
-    target.start_date = _parse_registration_date(registration_date) if registration_date else None
+    target.start_date = _preserve_registration_time(registration_date) if registration_date else None
     target.incident_type = request.form.get("incident_type", "").strip()
     target.report_number = request.form.get("report_number", "").strip()
     target.message_number = request.form.get("message_number", "").strip() or None
@@ -320,10 +331,10 @@ def _build_incidents_query():
 
     sort_column = SORTABLE_INCIDENT_FIELDS.get(sort_by, Incidente.start_date)
     if direction_filter == 'asc':
-        query = query.order_by(db.asc(sort_column))
+        query = query.order_by(db.asc(sort_column), db.asc(Incidente.id))
     else:
         direction_filter = 'desc'
-        query = query.order_by(db.desc(sort_column))
+        query = query.order_by(db.desc(sort_column), db.desc(Incidente.id))
 
     return query, {
         "status_filter": status_filter,
@@ -522,7 +533,7 @@ def new_incident():
                 )
 
             try:
-                start_date = _parse_registration_date(registration_date)
+                start_date = _server_registration_timestamp(registration_date)
                 description, description_plain_text = sanitize_incident_description(raw_description)
             except (ValueError, SanitizationError) as exc:
                 flash(str(exc), 'danger')
@@ -611,10 +622,10 @@ def new_incident():
                     modulo="Incidentes de segurança",
                     entidade="Incidente",
                     entidade_id=new_incident.id,
-                    descricao=f"Incidente criado: {new_incident.report_number}",
+                    descricao=f"Registrou incidente nº {new_incident.report_number} em {start_date.strftime('%d/%m/%Y %H:%M:%S')}",
                     alteracoes={
                         "status_incident": {"anterior": None, "novo": status_incident},
-                        "start_date": {"anterior": None, "novo": start_date.date()},
+                        "start_date": {"anterior": None, "novo": start_date.isoformat(sep=" ")},
                         "incident_type": {"anterior": None, "novo": incident_type},
                         "report_number": {"anterior": None, "novo": report_number},
                         "message_number": {"anterior": None, "novo": message_number},
@@ -746,7 +757,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
                 status_code=400,
             )
         try:
-            start_date = _parse_registration_date(registration_date)
+            start_date = _preserve_registration_time(registration_date, incident.start_date)
             description, description_plain_text = sanitize_incident_description(raw_description)
         except (ValueError, SanitizationError) as exc:
             flash(str(exc), 'danger')
