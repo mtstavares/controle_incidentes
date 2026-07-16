@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from config import DevelopmentConfig, ProductionConfig # Importando as classes de configuração do arquivo config.py
 from flask_login import LoginManager, current_user, set_login_view # Importando o gerenciador de login
 import hashlib
@@ -24,15 +26,20 @@ def hash(txt):
 db = SQLAlchemy()
 lm = LoginManager()
 migrate = Migrate()
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 logging.basicConfig(level=logging.INFO, filename='app.log', format='%(asctime)s - %(levelname)s - %(message)s')
 def create_app(config_class=ProductionConfig):
     
     app = Flask(__name__) # Criando uma instância do Flask
+    if hasattr(config_class, "validate"):
+        config_class.validate()
     app.config.from_object(config_class) # Carregando a configuração da classe fornecida > Desenvolvimento ou Produção
     app.config.setdefault("JSON_AS_ASCII", False)
     app.config.setdefault("JSONIFY_MIMETYPE", "application/json; charset=utf-8")
     app.config.setdefault("TIMEZONE", "America/Sao_Paulo")
+    if hasattr(app, "json"):
+        app.json.ensure_ascii = False
     
     os.makedirs(app.instance_path, exist_ok=True)
     os.makedirs('logs', exist_ok=True)
@@ -40,6 +47,7 @@ def create_app(config_class=ProductionConfig):
     db.init_app(app) # Inicializando o SQLAlchemy com a aplicação Flask
     migrate.init_app(app, db)
     lm.init_app(app) # Inicializando o LoginManager com a aplicação Flask  
+    limiter.init_app(app)
     # Carregando os blueprints
     from app.blueprints.main import main_bp # Importando o blueprint principal
     app.register_blueprint(main_bp) # Registrando o blueprint principal

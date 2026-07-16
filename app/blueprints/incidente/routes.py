@@ -7,10 +7,12 @@ from app import db
 from flask_login import login_required, current_user
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, cast, func, or_
 from urllib.parse import urlsplit
 from types import SimpleNamespace
+import unicodedata
 import plotly.express as px
+from werkzeug.exceptions import HTTPException
 from app.blueprints.users.routes import allowed_edit_profile
 from app.services.audit_service import AuditAction, montar_alteracoes, registrar_auditoria
 from app.services.attachment_service import (
@@ -133,6 +135,14 @@ SORTABLE_INCIDENT_FIELDS = {
     "incident_type": Incidente.incident_type,
     "report_number": Incidente.report_number,
 }
+SEARCH_ACCENT_MAP = (
+    ("á", "a"), ("à", "a"), ("â", "a"), ("ã", "a"), ("ä", "a"),
+    ("é", "e"), ("è", "e"), ("ê", "e"), ("ë", "e"),
+    ("í", "i"), ("ì", "i"), ("î", "i"), ("ï", "i"),
+    ("ó", "o"), ("ò", "o"), ("ô", "o"), ("õ", "o"), ("ö", "o"),
+    ("ú", "u"), ("ù", "u"), ("û", "u"), ("ü", "u"),
+    ("ç", "c"), ("ñ", "n"),
+)
 
 
 def _is_safe_internal_path(path):
@@ -142,16 +152,42 @@ def _is_safe_internal_path(path):
     return not parsed.scheme and not parsed.netloc and path.startswith("/") and not path.startswith("//")
 
 
+def _ensure_incident_owner_or_admin(incident, action):
+    """Prevents BOLA/IDOR: users can mutate only their own incidents."""
+    if current_user.profile == "Admin" or incident.user_id == current_user.id:
+        return
+    registrar_auditoria(
+        acao=AuditAction.ACESSO_NEGADO,
+        modulo="Incidentes de segurança",
+        entidade="Incidente",
+        entidade_id=incident.id,
+        descricao=f"Tentativa negada de {action} incidente de outro usuário.",
+        resultado="NEGADO",
+    )
+    abort(403)
+
+
 def _today_local_date():
     return datetime.now(SAO_PAULO_TZ).date()
 
 
 def _parse_registration_date(value):
     try:
-        parsed = datetime.strptime((value or "").strip(), "%Y-%m-%d")
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError("Formato de data inválido.") from exc
-    return parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _server_registration_timestamp(value):
+    selected_date = _parse_registration_date(value)
+    local_now = datetime.now(SAO_PAULO_TZ)
+    return datetime.combine(selected_date, local_now.time()).replace(microsecond=0, tzinfo=None)
+
+
+def _preserve_registration_time(value, current_start_date=None):
+    selected_date = _parse_registration_date(value)
+    current_time = current_start_date.time() if current_start_date else datetime.min.time()
+    return datetime.combine(selected_date, current_time).replace(microsecond=0, tzinfo=None)
 
 
 def _get_incident_types_for_form(current_value=None):
@@ -165,6 +201,88 @@ def _filter_values_with_legacy(value):
     values = [value]
     values.extend(LEGACY_TEXT_VARIANTS.get(value, []))
     return values
+
+
+def _escape_like(value):
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _normalize_for_search(value):
+    normalized = unicodedata.normalize("NFKD", value or "")
+    return "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+
+
+def _unaccent_sql_expression(column):
+    expression = func.lower(cast(column, String))
+    for accented, plain in SEARCH_ACCENT_MAP:
+        expression = func.replace(expression, accented, plain)
+        expression = func.replace(expression, accented.upper(), plain)
+    return expression
+
+
+def _search_match(column, search_value):
+    escaped_value = _escape_like(search_value)
+    escaped_normalized = _escape_like(_normalize_for_search(search_value))
+    return or_(
+        cast(column, String).ilike(f"%{escaped_value}%", escape="\\"),
+        _unaccent_sql_expression(column).like(f"%{escaped_normalized}%", escape="\\"),
+    )
+
+
+def _incident_search_predicate(search_value):
+    searchable_fields = [
+        Incidente.id,
+        Incidente.incident_type,
+        Incidente.report_number,
+        Incidente.message_number,
+        Incidente.ticket_number,
+        Incidente.status_incident,
+        Incidente.cpa,
+        Incidente.btl,
+        Incidente.cia,
+        Incidente.description,
+        Incidente.description_plain_text,
+        Incidente.start_date,
+        Incidente.end_date,
+        Incidente.created_at,
+        Incidente.updated_at,
+    ]
+    predicates = [_search_match(field, search_value) for field in searchable_fields]
+    predicates.extend([
+        Incidente.autor.has(or_(
+            _search_match(User.name, search_value),
+            _search_match(User.username, search_value),
+            _search_match(User.email, search_value),
+        )),
+        Incidente.command.has(_search_match(OrganizationalCommand.name, search_value)),
+        Incidente.unit.has(_search_match(OrganizationalUnit.name, search_value)),
+        Incidente.obs_incidente.any(or_(
+            _search_match(IncidenteObs.texto_observacao, search_value),
+            _search_match(IncidenteObs.data_observacao, search_value),
+            IncidenteObs.autor_obs.has(or_(
+                _search_match(User.name, search_value),
+                _search_match(User.username, search_value),
+                _search_match(User.email, search_value),
+            )),
+        )),
+        Incidente.attachments.any(or_(
+            _search_match(IncidentAttachment.original_filename, search_value),
+            _search_match(IncidentAttachment.mime_type, search_value),
+            _search_match(IncidentAttachment.sha256, search_value),
+        )),
+    ])
+    return or_(*predicates)
+
+
+def _log_incident_search_failure(search_value):
+    current_app.logger.exception(
+        "incident_search_failed",
+        extra={
+            "event": "incident_search_failed",
+            "user_id": getattr(current_user, "id", None),
+            "search_length": len(search_value or ""),
+        },
+    )
 
 
 def _incident_draft_from_form(description=None, description_plain_text=""):
@@ -197,7 +315,7 @@ def _incident_draft_from_form(description=None, description_plain_text=""):
 def _apply_form_to_incident_like(target, *, description, description_plain_text):
     target.status_incident = request.form.get("status_incidente", "").strip()
     registration_date = (request.form.get("registration_date") or request.form.get("start_data_hora", "")[:10]).strip()
-    target.start_date = _parse_registration_date(registration_date) if registration_date else None
+    target.start_date = _preserve_registration_time(registration_date) if registration_date else None
     target.incident_type = request.form.get("incident_type", "").strip()
     target.report_number = request.form.get("report_number", "").strip()
     target.message_number = request.form.get("message_number", "").strip() or None
@@ -272,43 +390,14 @@ def _build_incidents_query():
         query = query.filter(Incidente.status_incident == status_filter)
 
     if termo:
-        padrao = f"%{termo}%"
-        query = query.filter(or_(
-            cast(Incidente.id, String).ilike(padrao),
-            Incidente.incident_type.ilike(padrao),
-            Incidente.report_number.ilike(padrao),
-            Incidente.message_number.ilike(padrao),
-            Incidente.ticket_number.ilike(padrao),
-            Incidente.status_incident.ilike(padrao),
-            Incidente.cpa.ilike(padrao),
-            Incidente.btl.ilike(padrao),
-            Incidente.cia.ilike(padrao),
-            Incidente.description_plain_text.ilike(padrao),
-            cast(Incidente.start_date, String).ilike(padrao),
-            cast(Incidente.end_date, String).ilike(padrao),
-            Incidente.autor.has(or_(
-                User.name.ilike(padrao),
-                User.username.ilike(padrao),
-                User.email.ilike(padrao),
-            )),
-            Incidente.obs_incidente.any(or_(
-                IncidenteObs.texto_observacao.ilike(padrao),
-                cast(IncidenteObs.data_observacao, String).ilike(padrao),
-                IncidenteObs.autor_obs.has(or_(
-                    User.name.ilike(padrao),
-                    User.username.ilike(padrao),
-                    User.email.ilike(padrao),
-                )),
-            )),
-            Incidente.attachments.any(IncidentAttachment.original_filename.ilike(padrao)),
-        ))
+        query = query.filter(_incident_search_predicate(termo))
 
     sort_column = SORTABLE_INCIDENT_FIELDS.get(sort_by, Incidente.start_date)
     if direction_filter == 'asc':
-        query = query.order_by(db.asc(sort_column))
+        query = query.order_by(db.asc(sort_column), db.asc(Incidente.id))
     else:
         direction_filter = 'desc'
-        query = query.order_by(db.desc(sort_column))
+        query = query.order_by(db.desc(sort_column), db.desc(Incidente.id))
 
     return query, {
         "status_filter": status_filter,
@@ -366,7 +455,15 @@ def format_timedelta(td):
 @incidente_bp.route("/incidentes", methods=['GET'])
 @login_required
 def incidents_list():
-    incidentes, pagination, filters = _render_incident_list_context()
+    try:
+        incidentes, pagination, filters = _render_incident_list_context()
+    except HTTPException:
+        raise
+    except Exception:
+        search_value = request.args.get('q', '').strip()
+        _log_incident_search_failure(search_value)
+        flash("Não foi possível pesquisar os incidentes.", "danger")
+        return redirect(url_for("incidente.incidents_list"))
     total_incidents = Incidente.query.count()
     open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
     closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
@@ -389,7 +486,23 @@ def incidents_list():
 @incidente_bp.route("/incidentes/pesquisa", methods=['GET'])
 @login_required
 def search_incidents():
-    incidentes, pagination, filters = _render_incident_list_context()
+    try:
+        incidentes, pagination, filters = _render_incident_list_context()
+    except HTTPException:
+        raise
+    except Exception:
+        search_value = request.args.get('q', '').strip()
+        _log_incident_search_failure(search_value)
+        return render_template(
+            'incidente/_incident_list.html',
+            incidentes=[],
+            pagination=None,
+            status_filter=request.args.get('status_filter'),
+            direction_filter=request.args.get('direction', 'desc'),
+            sort_by=request.args.get('sort_by', 'start_date'),
+            q=search_value,
+            search_error=True,
+        ), 500
     return render_template(
         'incidente/_incident_list.html',
         incidentes=incidentes,
@@ -507,7 +620,7 @@ def new_incident():
                 )
 
             try:
-                start_date = _parse_registration_date(registration_date)
+                start_date = _server_registration_timestamp(registration_date)
                 description, description_plain_text = sanitize_incident_description(raw_description)
             except (ValueError, SanitizationError) as exc:
                 flash(str(exc), 'danger')
@@ -596,10 +709,10 @@ def new_incident():
                     modulo="Incidentes de segurança",
                     entidade="Incidente",
                     entidade_id=new_incident.id,
-                    descricao=f"Incidente criado: {new_incident.report_number}",
+                    descricao=f"Registrou incidente nº {new_incident.report_number} em {start_date.strftime('%d/%m/%Y %H:%M:%S')}",
                     alteracoes={
                         "status_incident": {"anterior": None, "novo": status_incident},
-                        "start_date": {"anterior": None, "novo": start_date.date()},
+                        "start_date": {"anterior": None, "novo": start_date.isoformat(sep=" ")},
                         "incident_type": {"anterior": None, "novo": incident_type},
                         "report_number": {"anterior": None, "novo": report_number},
                         "message_number": {"anterior": None, "novo": message_number},
@@ -686,6 +799,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
     incident = Incidente.query.get_or_404(incident_id)
+    _ensure_incident_owner_or_admin(incident, "editar")
     data_atual = _today_local_date()
     unidades = Unidades.query.all()
     commands, organizational_units = _organizational_form_options()
@@ -730,7 +844,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
                 status_code=400,
             )
         try:
-            start_date = _parse_registration_date(registration_date)
+            start_date = _preserve_registration_time(registration_date, incident.start_date)
             description, description_plain_text = sanitize_incident_description(raw_description)
         except (ValueError, SanitizationError) as exc:
             flash(str(exc), 'danger')
@@ -906,336 +1020,39 @@ def edit_incident(incident_id): # Rota para editar um incidente
         data_atual=data_atual,
     )
 
-
-    #Função para tornar uma string snake_case (e.g., 'status_incident') em uma string amigável (e.g., 'Status Incident').
-    def format_key_name(key_name):
-        """
-        Transforma uma string snake_case (e.g., 'status_incident') em
-        uma string amigável (e.g., 'Status Incident').
-        """
-        if not isinstance(key_name, str):
-            return str(key_name)
-
-        # 1. Substitui '_' por espaço
-        # 2. Converte para o formato Título (primeira letra de cada palavra em maiúsculo)
-        return key_name.replace('_', ' ').title()
-    if allowed_edit_profile(current_user): # função para verificar permissão do usuário para edição
-
-        #carregando dados do incidente registrado pelo id
-        incident = Incidente.query.get_or_404(incident_id)
-
-        # Veririfica o metodo da requisição, se for POST, atualiza os dados
-        if request.method == 'POST':
-
-            # Formato de data e hora que o input type="datetime-local" e o strftime usam
-            DATE_FORMAT = '%Y-%m-%dT%H:%M'
-
-            # 1. Armazenando os dados originais (em strings para comparação consistente)
-            original_data = {
-                'status_incident': incident.status_incident,
-                'start_date': incident.start_date.strftime(DATE_FORMAT) if incident.start_date else '',
-                'incident_type': incident.incident_type,
-                'report_number': incident.report_number,
-                'ticket_number': incident.ticket_number,
-                'btl': incident.btl,
-                'cpa': incident.cpa,
-                'cia': incident.cia,
-                'description': incident.description
-            }
-
-            # Mapeamento dos campos do formulário para os atributos do modelo (Incidente)
-            form_to_model = {
-                'status_incidente': 'status_incident',
-                'start_data_hora': 'start_date',
-                'incident_type': 'incident_type',
-                'report_number': 'report_number',
-                'ticket_number': 'ticket_number',
-                'btl': 'btl',
-                'cpa': 'cpa',
-                'cia': 'cia',
-                'description': 'description',
-            }
-
-            changes = []
-
-            # NOVAS VARIÁVEIS para armazenar os novos valores antes da atribuição final
-            new_values_map = {}
-
-            # 2. Iterando sobre o formulário para verificar mudanças E preparar a atribuição
-            for form_key, model_key in form_to_model.items():
-                # Obtém o novo valor do formulário, tratando como string
-                new_value = request.form.get(form_key, '').strip()
-                new_values_map[model_key] = new_value # Armazena o novo valor (string)
-
-                # Obtém o valor original (string normalizada)
-                original_value = original_data.get(model_key, '')
-
-                # Normaliza valores nulos/vazios para melhor comparação
-                original_str = str(original_value or '')
-                new_str = str(new_value or '')
-
-                # Exceção para campos que podem ser None/vazio e não devem gerar log se forem de None/Vazio para Vazio
-                if model_key in ['ticket_number', 'cia'] and original_str in ('None', '') and (new_str == '' or new_str == 'None' or new_str is None):
-                    continue
-
-                # Se houve mudança, registra no log
-                if new_str != original_str:
-                    friendly_name = format_key_name(model_key)
-                    if new_str == 'Encerrado': #SE O STATUS FOR ALTERADO PARA ENCERRADO, ATRIBUI A DATA ATUAL PARA END_DATE
-                        incident.end_date = datetime.now()
-                    changes.append(f"{friendly_name} alterado de '{original_str}' para '{new_str}'")
-
-
-            # 3. Atribui os novos valores ao objeto incident (GARANTINDO A ATRIBUI??O DE STRINGS)
-            # Isso resolve o problema do 'datetime.datetime' persistente.
-            incident.status_incident = new_values_map['status_incident']
-            incident.start_date = new_values_map['start_date'] # AGORA ? A STRING DO FORM
-
-            incident.incident_type = new_values_map['incident_type']
-            incident.report_number = new_values_map['report_number']
-            incident.ticket_number = new_values_map['ticket_number']
-            incident.btl = new_values_map['btl']
-            incident.cpa = new_values_map['cpa']
-            incident.cia = new_values_map['cia']
-            incident.description = new_values_map['description']
-
-
-            # 4. Verifica os campos obrigatórios (mantido, mas usando os novos valores)
-            if not all([incident.status_incident, incident.start_date, incident.incident_type, incident.report_number, incident.btl, incident.cpa, incident.description]):
-                flash('Erro: Os campos obrigatórios devem ser preenchidos.', 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            # 5. Convertendo campos de data para datetime (AGORA ? SEGURO)
-            try:
-                # incident.start_date é garantidamente a string do form neste ponto
-                incident.start_date = datetime.strptime(incident.start_date, DATE_FORMAT)
-
-            except ValueError:
-                flash('Erro: Formato de data/hora inválido.', 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            # if incident.end_date:
-            #     incident.end_date = datetime.strptime(incident.end_date, DATE_FORMAT)
-            # else:
-            #     incident.end_date = None
-
-            # 5. Gravando a observação de alterações
-            if changes:
-                txt_obs = "Alterações:\n" + "\n".join(changes)
-                txt_obs += f"Usuário: {current_user.name}"
-                # Note: 'usuario_id=1' é o 'Sistema' conforme seu código original
-                new_obs = IncidenteObs(incidente_id=incident.id, usuario_id=1, texto_observacao=txt_obs, data_observacao=datetime.now())
-                db.session.add(new_obs)
-
-            # 6. Adicionando e comitando no banco de dados (o objeto incident já foi modificado)
-            audit_changes = montar_alteracoes(
-                "Incidente",
-                original_data,
-                {
-                    'status_incident': incident.status_incident,
-                    'start_date': incident.start_date.strftime(DATE_FORMAT) if incident.start_date else '',
-                    'incident_type': incident.incident_type,
-                    'report_number': incident.report_number,
-                    'ticket_number': incident.ticket_number,
-                    'btl': incident.btl,
-                    'cpa': incident.cpa,
-                    'cia': incident.cia,
-                    'description': incident.description,
-                }
-            )
-            db.session.commit()
-            registrar_auditoria(
-                acao=AuditAction.EDITAR,
-                modulo="Incidentes de segurança",
-                entidade="Incidente",
-                entidade_id=incident.id,
-                descricao=f"Incidente editado: {incident.report_number}",
-                alteracoes=audit_changes,
-            )
-            current_app.logger.info(f"Usuario {current_user.id} editou o incidente {incident_id}") # REGISTRANDO LOG
-            flash('Incidente editado com sucesso!', 'success')
-            return redirect(url_for('incidente.incident_view', incident_id=incident_id))
-
-        edit_mode = True  # Indicador de modo de edição para o template
-        unidades = Unidades.query.all() # Carrega os dados da tabela unidades para o formulário
-        incidents_types = TipoIncidente.query.all()# Carrega os dados da tabela TipoIncidente para o formulário
-        status_incident_list = StatusIncidente.query.all() # Carrega os dados da tabela status para o formulário
-        # Se for GET, renderiza o formulário com os dados atuais
-        return render_template('incidente/new_incident.html', title="Editar Incidente", incident = incident, edit_mode=edit_mode, unidades=unidades, status_incident_list=status_incident_list, incidents_types=incidents_types)
-    else:
-        current_app.logger.info(f"Usuario {current_user.id} tentou editar o incidente {incident_id}. Sem permissão. {current_user.profile}")
-        flash('Acesso negado: Você não tem permissão para editar este incidente.', 'danger')
-        return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 #================================EXCLUIR INCIDENTE=================================
 @incidente_bp.route("/incidente/delete/<int:incident_id>", methods=['POST'])
 @login_required
 def delete_incident(incident_id):
-    if allowed_edit_profile(current_user):
-        # Rota para excluir um incidente
-        incident = Incidente.query.get_or_404(incident_id)
-        report_number = incident.report_number
+    if not allowed_edit_profile(current_user):
+        abort(403)
+
+    incident = Incidente.query.get_or_404(incident_id)
+    _ensure_incident_owner_or_admin(incident, "excluir")
+    report_number = incident.report_number
+
+    try:
         for attachment in list(incident.attachments or []):
             delete_attachment_file(attachment)
         db.session.delete(incident)
         registrar_auditoria(
             acao=AuditAction.EXCLUIR,
-            modulo="Incidentes de segurança",
+            modulo="Incidentes de seguran?a",
             entidade="Incidente",
             entidade_id=incident_id,
-            descricao=f"Incidente excluído: {report_number}",
+            descricao=f"Incidente exclu?do: {report_number}",
             commit=False,
             raise_on_error=True,
         )
         db.session.commit()
-        flash('Incidente excluído com sucesso!', 'success')
-        return redirect(url_for('incidente.incidents_list'))
-        data_atual = _today_local_date()
-        unidades = Unidades.query.all()
-        status_incident_list = StatusIncidente.query.all()
-        incidents_types = _get_incident_types_for_form(incident.incident_type)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao excluir incidente %s", incident_id)
+        flash("N?o foi poss?vel excluir o incidente.", "danger")
+        return redirect(url_for("incidente.incident_view", incident_id=incident_id))
 
-        if request.method == 'POST':
-            original_data = {
-                'status_incident': incident.status_incident,
-                'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
-                'incident_type': incident.incident_type,
-                'report_number': incident.report_number,
-                'message_number': incident.message_number,
-                'ticket_number': incident.ticket_number,
-                'btl': incident.btl,
-                'cpa': incident.cpa,
-                'cia': incident.cia,
-                'description': incident.description,
-                'description_plain_text': incident.description_plain_text,
-            }
-
-            status_incident = request.form.get('status_incidente', '').strip()
-            registration_date = (request.form.get('registration_date') or request.form.get('start_data_hora', '')[:10]).strip()
-            incident_type = request.form.get('incident_type', '').strip()
-            report_number = request.form.get('report_number', '').strip()
-            message_number = request.form.get('message_number', '').strip()
-            ticket_number = request.form.get('ticket_number', '').strip()
-            btl = request.form.get('btl', '').strip()
-            cpa = request.form.get('cpa', '').strip()
-            cia = request.form.get('cia', '').strip()
-            raw_description = request.form.get('description', '')
-
-            if incident_type not in TIPOS_INCIDENTE_PERMITIDOS and incident_type != original_data['incident_type']:
-                flash('Tipo de incidente informado é inválido.', 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            try:
-                start_date = _parse_registration_date(registration_date)
-                description, description_plain_text = sanitize_incident_description(raw_description)
-            except (ValueError, SanitizationError) as exc:
-                flash(str(exc), 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            if not all([status_incident, registration_date, incident_type, report_number, btl, cpa, description_plain_text]):
-                flash('Erro: Os campos obrigatórios devem ser preenchidos.', 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            incident.status_incident = status_incident
-            incident.start_date = start_date
-            incident.incident_type = incident_type
-            incident.report_number = report_number
-            incident.message_number = message_number or None
-            incident.ticket_number = ticket_number or None
-            incident.btl = btl
-            incident.cpa = cpa
-            incident.cia = cia
-            incident.description = description
-            incident.description_plain_text = description_plain_text
-            if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
-                incident.end_date = datetime.now()
-
-            saved_attachments = []
-            try:
-                saved_attachments = save_incident_attachments(request.files.getlist('incident_attachments'), incident, current_user)
-                for attachment in saved_attachments:
-                    db.session.add(attachment)
-                audit_changes = montar_alteracoes(
-                    "Incidente",
-                    original_data,
-                    {
-                        'status_incident': incident.status_incident,
-                        'start_date': incident.start_date.strftime('%Y-%m-%d') if incident.start_date else '',
-                        'incident_type': incident.incident_type,
-                        'report_number': incident.report_number,
-                        'message_number': incident.message_number,
-                        'ticket_number': incident.ticket_number,
-                        'btl': incident.btl,
-                        'cpa': incident.cpa,
-                        'cia': incident.cia,
-                        'description': "[alterado]" if original_data['description'] != incident.description else original_data['description'],
-                        'description_plain_text': "[alterado]" if original_data['description_plain_text'] != incident.description_plain_text else original_data['description_plain_text'],
-                    }
-                )
-                db.session.commit()
-            except AttachmentValidationError as exc:
-                db.session.rollback()
-                flash(str(exc), 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-            except Exception as exc:
-                db.session.rollback()
-                for attachment in saved_attachments:
-                    delete_attachment_file(attachment)
-                current_app.logger.exception("Falha ao editar incidente: %s", exc)
-                flash('Não foi possível editar o incidente.', 'danger')
-                return redirect(url_for('incidente.edit_incident', incident_id=incident_id))
-
-            registrar_auditoria(
-                acao=AuditAction.EDITAR,
-                modulo="Incidentes de segurança",
-                entidade="Incidente",
-                entidade_id=incident.id,
-                descricao=f"Incidente editado: {incident.report_number}",
-                alteracoes=audit_changes,
-            )
-            for attachment in saved_attachments:
-                registrar_auditoria(
-                    acao=AuditAction.UPLOAD_ANEXO,
-                    modulo="Incidentes de segurança",
-                    entidade="IncidentAttachment",
-                    entidade_id=attachment.id,
-                    descricao=f"Anexo enviado para incidente {incident.id}: {attachment.original_filename}",
-                    alteracoes={
-                        "incident_id": {"anterior": None, "novo": incident.id},
-                        "original_filename": {"anterior": None, "novo": attachment.original_filename},
-                        "mime_type": {"anterior": None, "novo": attachment.mime_type},
-                        "file_size": {"anterior": None, "novo": attachment.file_size},
-                        "sha256": {"anterior": None, "novo": attachment.sha256},
-                        "uploaded_by_id": {"anterior": None, "novo": current_user.id},
-                    },
-                )
-            flash('Incidente editado com sucesso!', 'success')
-            return redirect(url_for('incidente.incident_view', incident_id=incident_id))
-
-        return render_template(
-            'incidente/new_incident.html',
-            title="Editar Incidente",
-            incident=incident,
-            edit_mode=True,
-            unidades=unidades,
-            status_incident_list=status_incident_list,
-            incidents_types=incidents_types,
-            data_atual=data_atual,
-        )
-        report_number = incident.report_number
-        db.session.delete(incident)
-        db.session.commit()
-        registrar_auditoria(
-            acao=AuditAction.EXCLUIR,
-            modulo="Incidentes de segurança",
-            entidade="Incidente",
-            entidade_id=incident_id,
-            descricao=f"Incidente excluído: {report_number}",
-        )
-        flash('Incidente excluído com sucesso!', 'success')
-        return redirect(url_for('incidente.incidents_list'))
-    else:
-        flash('Acesso negado: Você não tem permissão para excluir este incidente.', 'danger')
-        return redirect(url_for('incidente.incident_view', incident_id=incident_id))
+    flash("Incidente exclu?do com sucesso!", "success")
+    return redirect(url_for("incidente.incidents_list"))
 
 
 

@@ -10,8 +10,9 @@ os.makedirs("logs", exist_ok=True)
 from app import create_app, db, hash
 from app.models import StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from config import DevelopmentConfig
 
-app = create_app()
+app = create_app(DevelopmentConfig)
 
 
 def bootstrap_local_database():

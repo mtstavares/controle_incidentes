@@ -89,7 +89,13 @@
     {% endif %}
 </section>
 {% else %}
-    {% if q %}
+    {% if search_error %}
+        <div class="empty-state" role="alert">
+            <div class="empty-state__mark" aria-hidden="true"></div>
+            <h2>Não foi possível pesquisar os incidentes.</h2>
+            <p>Tente novamente em instantes ou ajuste o termo pesquisado.</p>
+        </div>
+    {% elif q %}
         <div class="empty-state" role="status">
             <div class="empty-state__mark" aria-hidden="true"></div>
             <h2>Nenhum incidente encontrado para os critérios informados.</h2>

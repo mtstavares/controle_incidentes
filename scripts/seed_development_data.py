@@ -10,13 +10,14 @@ if str(ROOT) not in sys.path:
 
 from app import create_app
 from app.seeds.organizational_units import seed_development_organizational_units
+from config import DevelopmentConfig
 
 
 load_dotenv()
 
 
 def main():
-    app = create_app()
+    app = create_app(DevelopmentConfig)
     with app.app_context():
         result = seed_development_organizational_units()
         print(
