@@ -1,11 +1,11 @@
 import json
-from datetime import datetime, timezone
 
 from flask import current_app, g, has_request_context, request
 from flask_login import current_user
 
 from app import db
 from app.models import AuditLog
+from app.services.timezone_service import utc_now
 
 
 class AuditAction:
@@ -94,10 +94,6 @@ SENSITIVE_KEYS = {
     "secret",
     "session",
 }
-
-
-def utc_now():
-    return datetime.now(timezone.utc)
 
 
 def _limit(value, max_length):

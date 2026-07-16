@@ -1,7 +1,7 @@
 import pandas as pd
-from datetime import datetime
 from app.models import Incidente, TipoIncidente, StatusIncidente
 from app import db
+from app.services.timezone_service import local_now
 
 def get_filtered_incidents_df(start_date, end_date, incident_type, status_str):
     """
@@ -11,7 +11,7 @@ def get_filtered_incidents_df(start_date, end_date, incident_type, status_str):
     if not start_date:
         start_date = '2024-06-03'
     if not end_date:
-        end_date = datetime.now().strftime('%Y-%m-%dT%H:%M')
+        end_date = local_now().strftime('%Y-%m-%dT%H:%M')
     
     # Consulta todos os incidentes e converte para DataFrame
     incidentes_query = Incidente.query.all()

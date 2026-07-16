@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app import create_app, db, hash
 from app.models import AuditLog, Incidente, IncidenteObs, IncidentAttachment, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.timezone_service import APP_TIMEZONE, format_local_datetime, to_local
 
 
 class TestConfig:
@@ -603,6 +604,54 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         audit = AuditLog.query.filter_by(acao="CRIAR", entidade="Incidente", entidade_id=str(late.id)).first()
         self.assertIn("17:45:33", audit.descricao)
         self.assertEqual(audit.alteracoes["start_date"]["novo"], "2026-07-16 17:45:33")
+
+    def test_incident_registration_uses_sao_paulo_time_without_fixed_offset(self):
+        self.login("user", "user123")
+        utc_reference = datetime(2026, 7, 16, 17, 37, 51, tzinfo=timezone.utc)
+        with patch("app.services.timezone_service.utc_now", return_value=utc_reference):
+            response = self.client.post("/incidente/new", data={
+                "status_incidente": "Em Análise",
+                "registration_date": "2026-07-16",
+                "incident_type": "Phishing",
+                "report_number": "REL-TZ",
+                "message_number": "MSG-TZ",
+                "ticket_number": "INC-TZ",
+                "btl": "BTL Teste",
+                "cpa": "CPA Teste",
+                "cia": "1 CIA",
+                "description": "<p>Teste de fuso horário</p>",
+            }, follow_redirects=True)
+
+        self.assertIn("Incidente registrado com sucesso", response.get_data(as_text=True))
+        incident = Incidente.query.filter_by(report_number="REL-TZ").first()
+        self.assertEqual(incident.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 14:37:51")
+
+    def test_audit_and_timezone_helpers_render_sao_paulo_without_double_conversion(self):
+        aware_utc = datetime(2026, 7, 16, 17, 37, 51, tzinfo=timezone.utc)
+        aware_local = aware_utc.astimezone(APP_TIMEZONE)
+        self.assertEqual(format_local_datetime(aware_utc), "16/07/2026 14:37:51")
+        self.assertEqual(to_local(aware_local).strftime("%d/%m/%Y %H:%M:%S"), "16/07/2026 14:37:51")
+
+        with patch("app.services.audit_service.utc_now", return_value=aware_utc):
+            self.login("user", "user123")
+        login_log = AuditLog.query.filter_by(acao="LOGIN").first()
+        self.assertEqual(self.app.jinja_env.filters["sp_datetime"](login_log.timestamp), "16/07/2026 14:37:51")
+
+    def test_observation_uses_local_operational_timestamp(self):
+        incident = self.create_incident()
+        with patch(
+            "app.blueprints.incidente.routes.local_naive_now",
+            return_value=datetime(2026, 7, 16, 14, 37, 51),
+        ):
+            self.client.post(
+                f"/incidente/{incident.id}/add_obs",
+                data={"texto_observacao": "Observação com horário local"},
+            )
+
+        obs = IncidenteObs.query.filter_by(texto_observacao="Observação com horário local").first()
+        self.assertEqual(obs.data_observacao.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 14:37:51")
+        html = self.client.get(f"/incidente/{incident.id}").get_data(as_text=True)
+        self.assertIn("16/07/2026 14:37", html)
 
     def test_incident_form_errors_keep_submitted_values_and_show_specific_message(self):
         self.login("user", "user123")

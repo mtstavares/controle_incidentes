@@ -5,8 +5,7 @@ from app.blueprints.incidente import incidente_bp
 from app.models import Incidente, User, IncidenteObs, Unidades, StatusIncidente, TipoIncidente, IncidentAttachment, OrganizationalCommand, OrganizationalUnit
 from app import db
 from flask_login import login_required, current_user
-from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta
 from sqlalchemy import String, cast, func, or_
 from urllib.parse import urlsplit
 from types import SimpleNamespace
@@ -22,10 +21,11 @@ from app.services.attachment_service import (
     save_incident_attachments,
 )
 from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
+from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_current_time, local_naive_now, local_now
 
 MAX_SEARCH_LENGTH = 200
 INCIDENTS_PER_PAGE = 10
-SAO_PAULO_TZ = ZoneInfo("America/Sao_Paulo")
+SAO_PAULO_TZ = APP_TIMEZONE
 TIPOS_INCIDENTE_PERMITIDOS = {
     "Requisições automatizadas",
     "Transferência de arquivo malicioso",
@@ -168,7 +168,7 @@ def _ensure_incident_owner_or_admin(incident, action):
 
 
 def _today_local_date():
-    return datetime.now(SAO_PAULO_TZ).date()
+    return local_now().date()
 
 
 def _parse_registration_date(value):
@@ -180,8 +180,7 @@ def _parse_registration_date(value):
 
 def _server_registration_timestamp(value):
     selected_date = _parse_registration_date(value)
-    local_now = datetime.now(SAO_PAULO_TZ)
-    return datetime.combine(selected_date, local_now.time()).replace(microsecond=0, tzinfo=None)
+    return combine_local_date_with_current_time(selected_date)
 
 
 def _preserve_registration_time(value, current_start_date=None):
@@ -359,7 +358,7 @@ def _is_inline_attachment(attachment):
 
 
 def _format_incident_durations(incidentes):
-    now = datetime.now()
+    now = local_naive_now()
     incidentes_com_tempo = []
     for inc in incidentes:
         start_date_aware = inc.start_date.replace()
@@ -542,7 +541,7 @@ def search_incidents():
 
 
     # Define o momento atual para calcular o tempo aberto
-    now = datetime.now()
+    now = local_naive_now()
     print(f"Now UTC: {now}")
     # Itera sobre os incidentes para calcular e anexar o tempo aberto
     incidentes_com_tempo = []
@@ -920,7 +919,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         incident.description = description
         incident.description_plain_text = description_plain_text
         if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
-            incident.end_date = datetime.now()
+            incident.end_date = local_naive_now()
 
         saved_attachments = []
         try:
@@ -1114,7 +1113,7 @@ def add_obs(incident_id):
         # Rota para adicionar observação ao incidente
         texto_observacao = request.form['texto_observacao']
         user_id = current_user.id # Usuário logado
-        data_observacao = datetime.now(timezone.utc) # Data e hora real gerada pelo backend
+        data_observacao = local_naive_now()
 
         # Adicionando e comitando no banco de dados
         new_obs = IncidenteObs(incidente_id=incident_id, usuario_id=user_id, texto_observacao=texto_observacao, data_observacao=data_observacao)

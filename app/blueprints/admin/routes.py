@@ -1,4 +1,3 @@
-from datetime import datetime, time, timezone
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from app.blueprints.admin import admin_bp
@@ -6,12 +5,19 @@ from app import db
 from app.models import AuditLog, User
 from app.services.authz import admin_required
 from app.services.audit_service import AuditAction, registrar_auditoria
+from app.services.timezone_service import local_date_bounds_as_utc_naive, parse_iso_date, utc_now
 from app.services.user_service import PERFIS_PERMITIDOS
 
 
 def _parse_date(value, end=False):
     if not value:
         return None
+    try:
+        parsed = parse_iso_date(value)
+    except ValueError:
+        return None
+    start_bound, end_bound = local_date_bounds_as_utc_naive(parsed)
+    return end_bound if end else start_bound
 
 
 def _wants_json():
@@ -23,11 +29,6 @@ def _delete_user_response(message, status_code, category="danger"):
         return jsonify({"message": message}), status_code
     flash(message, category)
     return redirect(url_for("admin.gestao_usuarios"))
-    try:
-        parsed = datetime.strptime(value, "%Y-%m-%d").date()
-        return datetime.combine(parsed, time.max if end else time.min)
-    except ValueError:
-        return None
 
 
 @admin_bp.route("/admin/usuarios", methods=["GET"])
@@ -182,7 +183,7 @@ def excluir_usuario(user_id):
     old_active = user.is_active
     try:
         user.is_active = False
-        user.deleted_at = datetime.now(timezone.utc)
+        user.deleted_at = utc_now()
         user.deleted_by_id = actor.id
         registrar_auditoria(
             acao=AuditAction.USER_DELETED,

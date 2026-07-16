@@ -36,7 +36,7 @@
             <li><strong>Status:</strong> <span>{{ incidente.status_incident }}</span></li>
             <li><strong>Tipo:</strong> <span>{{ incidente.incident_type }}</span></li>
             <li><strong>Data de Início:</strong> <span>{{ incidente.start_date.strftime('%d/%m/%Y') }}</span></li>
-            <li><strong>Data de Encerramento:</strong> <span>{{ incidente.end_date.strftime('%d/%m/%Y %H:%M') if incidente.end_date else 'Em aberto' }}</span></li>
+            <li><strong>Data de Encerramento:</strong> <span>{{ incidente.end_date.strftime('%d/%m/%Y %H:%M:%S') if incidente.end_date else 'Em aberto' }}</span></li>
             <li><strong>Registrado por:</strong> <span>{{ incidente.autor.name }}</span></li>
             <li><strong>Nº relatório:</strong> <span>{{ incidente.report_number }}</span></li>
             <li><strong>Ticket:</strong> <span>{{ ticket_parts|join(' - ') if ticket_parts else 'N/A' }}</span></li>
@@ -111,7 +111,7 @@
                     <div class="d-flex flex-column flex-md-row justify-content-between gap-2">
                         <div>
                             <h3 class="h6 mb-1">{{ 'Alteração' if obs.autor_obs.name == 'system' else 'Observação' }}</h3>
-                            <p class="text-muted small mb-0">Por {{ obs.autor_obs.name }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M') }} - ID {{ obs.id }}</p>
+                            <p class="text-muted small mb-0">Por {{ obs.autor_obs.name }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M:%S') }} - ID {{ obs.id }}</p>
                         </div>
                         {% if obs.autor_obs == current_user or current_user.profile == 'Admin' %}
                         <form method="POST" action="{{ url_for('incidente.delete_obs', incident_id=incidente.id, obs_id=obs.id) }}" data-prevent-duplicate>
