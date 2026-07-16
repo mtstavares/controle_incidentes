@@ -1,7 +1,7 @@
 """Repair known UTF-8 mojibake sequences in persisted text fields.
 
 The script is idempotent and intentionally conservative: it only rewrites
-recognized mojibake sequences such as "Ã§" and "Ã£". It never replaces plain
+recognized mojibake sequences such as "ç" and "ã". It never replaces plain
 "?" characters because they may be legitimate data.
 
 Usage:
