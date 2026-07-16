@@ -1,6 +1,8 @@
 # app/__init__.py
 
-from flask import Flask, abort, redirect, render_template, request, session, url_for
+from datetime import timezone
+from zoneinfo import ZoneInfo
+from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from config import DevelopmentConfig, ProductionConfig # Importando as classes de configuração do arquivo config.py
@@ -11,6 +13,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import secrets
+import uuid
 from flask_login import LoginManager, set_login_view # Importando o gerenciador de login
 import hashlib
 
@@ -27,6 +30,9 @@ def create_app(config_class=ProductionConfig):
     
     app = Flask(__name__) # Criando uma instância do Flask
     app.config.from_object(config_class) # Carregando a configuração da classe fornecida > Desenvolvimento ou Produção
+    app.config.setdefault("JSON_AS_ASCII", False)
+    app.config.setdefault("JSONIFY_MIMETYPE", "application/json; charset=utf-8")
+    app.config.setdefault("TIMEZONE", "America/Sao_Paulo")
     
     os.makedirs(app.instance_path, exist_ok=True)
     os.makedirs('logs', exist_ok=True)
@@ -76,6 +82,7 @@ def create_app(config_class=ProductionConfig):
     
     @app.before_request
     def require_password_change():
+        g.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not app.testing:
             sent_token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
             expected_token = session.get("_csrf_token")
@@ -98,9 +105,28 @@ def create_app(config_class=ProductionConfig):
         ):
             return redirect(url_for("users.change_password"))
         return None
+
+    @app.after_request
+    def enforce_utf8_charset(response):
+        content_type = response.headers.get("Content-Type", "")
+        if content_type.startswith("text/html") and "charset=" not in content_type.lower():
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+        elif content_type.startswith("application/json") and "charset=" not in content_type.lower():
+            response.headers["Content-Type"] = "application/json; charset=utf-8"
+        response.headers.setdefault("X-Request-ID", getattr(g, "request_id", ""))
+        return response
+
+    @app.template_filter("sp_datetime")
+    def sp_datetime(value):
+        if not value:
+            return ""
+        source = value
+        if source.tzinfo is None:
+            source = source.replace(tzinfo=timezone.utc)
+        return source.astimezone(ZoneInfo(app.config["TIMEZONE"])).strftime("%d/%m/%Y %H:%M:%S")
     
     # ====================================================================
-    # CONFIGURA??O DO LOGGING
+    # CONFIGURAÇÃO DO LOGGING
     # ====================================================================
 
     if not app.debug and not app.testing:
@@ -155,6 +181,5 @@ def create_app(config_class=ProductionConfig):
         return render_template('errors/error.html', title='Erro interno', code=500, message='Não foi possível concluir a operação. Tente novamente mais tarde.'), 500
     
     return app # Retornando a instância da aplicação Flask
-
 
 

@@ -80,7 +80,7 @@
             <tbody>
                 {% for log in logs %}
                 <tr>
-                    <td>{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                    <td>{{ log.timestamp|sp_datetime }}</td>
                     <td>{{ log.usuario_identificacao }}</td>
                     <td><span class="app-badge app-badge--info">{{ log.acao }}</span></td>
                     <td>{{ log.modulo }}</td>
@@ -101,7 +101,7 @@
             <div class="d-flex justify-content-between gap-3 align-items-start">
                 <div>
                     <h2 class="h6 mb-1">{{ log.acao }}</h2>
-                    <p class="text-muted small mb-0">{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }} UTC</p>
+                    <p class="text-muted small mb-0">{{ log.timestamp|sp_datetime }}</p>
                 </div>
                 <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.audit_log_detail', log_id=log.id) }}">Abrir</a>
             </div>

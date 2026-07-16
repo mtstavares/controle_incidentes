@@ -268,7 +268,7 @@ def search_incident():
 ################################################################################
 
 
-#=================================ADD OBSERVA??O=================================
+#=================================ADD OBSERVAÇÃO=================================
 @incidente_bp.route("/incidente/<int:incident_id>/add_obs", methods=['POST'])
 @login_required
 def add_obs(incident_id):
@@ -285,7 +285,7 @@ def add_obs(incident_id):
     return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
 
-#=================================EXCLUIR OBSERVA??O=================================
+#=================================EXCLUIR OBSERVAÇÃO=================================
 @incidente_bp.route("/incidente/<int:incident_id>/delete_obs/<int:obs_id>", methods=['POST'])
 @login_required
 def delete_obs(incident_id, obs_id):

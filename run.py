@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from dotenv import load_dotenv
 
@@ -9,6 +9,7 @@ os.makedirs("logs", exist_ok=True)
 
 from app import create_app, db, hash
 from app.models import StatusIncidente, TipoIncidente, Unidades, User
+from app.seeds.organizational_units import seed_development_organizational_units
 
 app = create_app()
 
@@ -67,9 +68,14 @@ def bootstrap_local_database():
             if not Unidades.query.filter_by(cpa=cpa, btl=btl).first():
                 db.session.add(Unidades(cpa=cpa, btl=btl))
 
+        seed_result = seed_development_organizational_units(commit=False)
         db.session.commit()
+        print(
+            "Seed de unidades organizacionais concluÃ­da: "
+            f"{seed_result['created']} criadas, {seed_result['existing']} jÃ¡ existentes."
+        )
         print("Banco de dados e tabelas criados com sucesso.")
-        print("Script de criação do banco de dados concluído.")
+        print("Script de criação do banco de dados concluÃ­do.")
 
 
 if not (len(sys.argv) > 1 and sys.argv[1] == "db"):
@@ -78,3 +84,4 @@ if not (len(sys.argv) > 1 and sys.argv[1] == "db"):
 
 if __name__ == "__main__":
     app.run(port=5005, host="0.0.0.0")
+

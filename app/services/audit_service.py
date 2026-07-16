@@ -1,6 +1,9 @@
+import json
 from datetime import datetime, timezone
-from flask import current_app, has_request_context, request
+
+from flask import current_app, g, has_request_context, request
 from flask_login import current_user
+
 from app import db
 from app.models import AuditLog
 
@@ -24,6 +27,8 @@ class AuditAction:
     UPLOAD_ANEXO = "UPLOAD_ANEXO"
     DOWNLOAD_ANEXO = "DOWNLOAD_ANEXO"
     EXCLUIR_ANEXO = "EXCLUIR_ANEXO"
+    USER_DELETED = "USER_DELETED"
+    USER_DELETE_DENIED = "USER_DELETE_DENIED"
 
 
 AUDITABLE_FIELDS = {
@@ -36,14 +41,31 @@ AUDITABLE_FIELDS = {
         "ticket_number",
         "btl",
         "cpa",
+        "unit_id",
+        "command_id",
         "cia",
         "description",
         "description_plain_text",
         "user_id",
         "end_date",
+        "created_at",
+        "updated_at",
+        "deleted_at",
     },
-    "User": {"username", "name", "email", "profile", "is_temp_password", "must_change_password"},
-    "IncidenteObs": {"texto_observacao", "incidente_id", "usuario_id"},
+    "User": {
+        "username",
+        "name",
+        "email",
+        "profile",
+        "is_temp_password",
+        "must_change_password",
+        "is_active",
+        "deleted_by_id",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+    },
+    "IncidenteObs": {"texto_observacao", "incidente_id", "usuario_id", "created_at", "updated_at", "deleted_at"},
     "IncidentAttachment": {
         "incident_id",
         "original_filename",
@@ -51,7 +73,12 @@ AUDITABLE_FIELDS = {
         "file_size",
         "sha256",
         "uploaded_by_id",
+        "uploaded_at",
+        "created_at",
+        "updated_at",
+        "deleted_at",
     },
+    "AuditLog": {"id", "timestamp", "request_id", "resultado"},
 }
 
 SENSITIVE_KEYS = {
@@ -60,11 +87,17 @@ SENSITIVE_KEYS = {
     "new_password",
     "confirm_password",
     "csrf_token",
+    "_csrf_token",
     "token",
     "cookie",
     "authorization",
     "secret",
+    "session",
 }
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 def _limit(value, max_length):
@@ -82,6 +115,18 @@ def _safe_user(usuario=None):
         identity = getattr(user, "username", None) or getattr(user, "name", None) or f"user:{user.id}"
         return user.id, _limit(identity, 255)
     return None, "anonimo"
+
+
+def _safe_request_context():
+    if not has_request_context():
+        return None, None, None, None, None
+    return (
+        request.remote_addr,
+        request.headers.get("User-Agent"),
+        request.endpoint,
+        request.method,
+        getattr(g, "request_id", None),
+    )
 
 
 def filtrar_alteracoes(entidade, alteracoes):
@@ -116,6 +161,26 @@ def montar_alteracoes(entidade, anteriores, novos):
     return filtrar_alteracoes(entidade, changes)
 
 
+def _log_structured_event(log):
+    payload = {
+        "event": "audit",
+        "id": log.id,
+        "occurred_at": log.timestamp.isoformat().replace("+00:00", "Z"),
+        "actor_user_id": log.usuario_id,
+        "actor_name": log.usuario_identificacao,
+        "action": log.acao,
+        "entity_type": log.entidade,
+        "entity_id": log.entidade_id,
+        "old_values": log.old_values,
+        "new_values": log.new_values,
+        "source_ip": log.ip_address,
+        "user_agent": log.user_agent,
+        "request_id": log.request_id,
+        "result": log.resultado,
+    }
+    current_app.logger.info(json.dumps(payload, ensure_ascii=False, default=str))
+
+
 def registrar_auditoria(
     *,
     acao,
@@ -126,22 +191,16 @@ def registrar_auditoria(
     alteracoes=None,
     resultado="SUCESSO",
     usuario=None,
+    commit=True,
+    raise_on_error=False,
 ):
     try:
         usuario_id, usuario_identificacao = _safe_user(usuario)
-        ip_address = None
-        user_agent = None
-        endpoint = None
-        metodo_http = None
-        if has_request_context():
-            # Em produção, use ProxyFix apenas quando o proxy reverso for confiável.
-            ip_address = request.remote_addr
-            user_agent = request.headers.get("User-Agent")
-            endpoint = request.endpoint
-            metodo_http = request.method
+        ip_address, user_agent, endpoint, metodo_http, request_id = _safe_request_context()
 
         log = AuditLog(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=utc_now(),
+            request_id=_limit(request_id, 64),
             usuario_id=usuario_id,
             usuario_identificacao=usuario_identificacao,
             acao=_limit(acao, 50),
@@ -157,10 +216,16 @@ def registrar_auditoria(
             resultado=_limit(resultado, 30) or "SUCESSO",
         )
         db.session.add(log)
-        db.session.commit()
+        if commit:
+            db.session.commit()
+            _log_structured_event(log)
+        return log
     except Exception as exc:
         db.session.rollback()
         try:
             current_app.logger.exception("Falha ao registrar auditoria: %s", exc)
         except Exception:
             pass
+        if raise_on_error:
+            raise
+        return None

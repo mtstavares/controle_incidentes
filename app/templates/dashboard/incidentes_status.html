@@ -21,10 +21,9 @@
             <div class="span-3">
                 <label for="incident_type" class="form-label">Tipo de incidente</label>
                 <select class="form-select" id="incident_type" name="incident_type">
-                    <option value="{{ filtros_aplicados.incident_type or 'todos' }}">{{ filtros_aplicados.incident_type or 'Todos' }}</option>
-                    <option value="todos">Todos</option>
+                    <option value="todos" {% if not filtros_aplicados.incident_type or filtros_aplicados.incident_type == 'todos' %}selected{% endif %}>Todos</option>
                     {% for type in incidents_types %}
-                        <option value="{{ type.tipo_incidente }}">{{ type.tipo_incidente }}</option>
+                        <option value="{{ type.tipo_incidente }}" {% if filtros_aplicados.incident_type == type.tipo_incidente %}selected{% endif %}>{{ type.tipo_incidente }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -41,6 +40,7 @@
     <article class="metric-card"><p class="metric-card__label">Encerrados</p><p class="metric-card__value">{{ totais.Resolvido }}</p></article>
     <article class="metric-card"><p class="metric-card__label">Em análise</p><p class="metric-card__value">{{ totais['Em Análise'] }}</p></article>
     <article class="metric-card"><p class="metric-card__label">Em mitigação</p><p class="metric-card__value">{{ totais.Aguardando }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Falso positivo</p><p class="metric-card__value">{{ totais['Falso Positivo'] }}</p></article>
 </section>
 
 <section class="app-card" aria-labelledby="status-chart-title">

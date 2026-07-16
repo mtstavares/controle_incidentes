@@ -125,7 +125,6 @@ a:hover {
   border-radius: 50%;
   object-fit: cover;
   background: #fff;
-  border: 2px solid rgb(255 255 255 / 70%);
 }
 
 .app-brand__name {
@@ -242,7 +241,7 @@ a:hover {
 .breadcrumb-lite {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-5);
   margin: 0;
   color: var(--color-text-muted);
   font-size: 0.86rem;
@@ -354,6 +353,13 @@ h1 {
 
 .metric-grid {
   display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.metric-grid-incidentes {
+  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-5);
@@ -380,6 +386,120 @@ h1 {
   font-size: 2rem;
   font-weight: 850;
   line-height: 1;
+}
+
+.segmented-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+}
+
+.segmented-tabs__item {
+  min-height: 2.5rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.segmented-tabs__item:hover,
+.segmented-tabs__item.is-active {
+  color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.hierarchy-chart {
+  display: grid;
+  gap: var(--space-5);
+  min-width: min(100%, 720px);
+  overflow-x: auto;
+}
+
+.hierarchy-chart__axis {
+  display: grid;
+  grid-template-columns: 12rem minmax(16rem, 1fr) 3rem;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.hierarchy-chart__axis span:nth-child(2) {
+  text-align: center;
+}
+
+.hierarchy-chart__axis span:last-child {
+  text-align: right;
+}
+
+.hierarchy-group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.hierarchy-group__title {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.hierarchy-bar-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 12rem) minmax(16rem, 1fr) 3rem;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.hierarchy-bar-row__label {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.hierarchy-bar-track {
+  min-height: 2rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
+}
+
+.hierarchy-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0.25rem;
+  min-height: 2rem;
+  height: 100%;
+  padding-inline: var(--space-2);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hierarchy-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hierarchy-bar-row__value {
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .hierarchy-chart__axis,
+  .hierarchy-bar-row {
+    grid-template-columns: minmax(8rem, 10rem) minmax(14rem, 1fr) 2.5rem;
+  }
 }
 
 .btn {
@@ -985,6 +1105,29 @@ h1 {
 .incident-form-back {
   display: flex;
   justify-content: flex-start;
+}
+
+.user-card__delete-action {
+  margin-top: var(--space-2);
+  
+  
+}
+
+.confirm-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(15 23 42 / 55%);
+}
+
+.confirm-dialog__panel {
+  padding: var(--space-5);
 }
 
 .incident-identity-list {

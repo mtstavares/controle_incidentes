@@ -1,6 +1,6 @@
-from datetime import datetime, time
-from flask import abort, flash, redirect, render_template, request, url_for
-from flask_login import current_user
+from datetime import datetime, time, timezone
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from app.blueprints.admin import admin_bp
 from app import db
 from app.models import AuditLog, User
@@ -14,6 +14,22 @@ def _parse_date(value, end=False):
         return None
 
 
+def _wants_json():
+    return request.accept_mimetypes.best == "application/json" or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _delete_user_response(message, status_code, category="danger"):
+    if _wants_json():
+        return jsonify({"message": message}), status_code
+    flash(message, category)
+    return redirect(url_for("admin.gestao_usuarios"))
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.combine(parsed, time.max if end else time.min)
+    except ValueError:
+        return None
+
+
 @admin_bp.route("/admin/usuarios", methods=["GET"])
 @admin_required
 def gestao_usuarios():
@@ -21,7 +37,7 @@ def gestao_usuarios():
     page = max(request.args.get("page", 1, type=int), 1)
     per_page = min(max(request.args.get("per_page", 20, type=int), 1), 50)
 
-    query = User.query
+    query = User.query.filter(User.is_active.is_(True))
     if termo:
         padrao = f"%{termo}%"
         query = query.filter(
@@ -52,7 +68,7 @@ def gestao_usuarios():
 @admin_bp.route("/admin/usuarios/<int:user_id>/perfil", methods=["POST"])
 @admin_required
 def alterar_perfil_usuario(user_id):
-    user = User.query.get_or_404(user_id)
+    user = User.query.filter_by(id=user_id, is_active=True).first_or_404()
     novo_perfil = (request.form.get("profile") or "").strip()
     if novo_perfil not in PERFIS_PERMITIDOS:
         flash("Perfil informado é inválido.", "danger")
@@ -70,7 +86,6 @@ def alterar_perfil_usuario(user_id):
             return redirect(url_for("admin.gestao_usuarios"))
 
     user.profile = novo_perfil
-    db.session.commit()
     registrar_auditoria(
         acao=AuditAction.ALTERAR_USUARIO,
         modulo="Administração",
@@ -78,14 +93,117 @@ def alterar_perfil_usuario(user_id):
         entidade_id=user.id,
         descricao=f"Perfil do usuário {user.username} alterado por {current_user.username}.",
         alteracoes={"profile": {"anterior": perfil_anterior, "novo": novo_perfil}},
+        commit=False,
+        raise_on_error=True,
     )
+    db.session.commit()
     flash("Perfil atualizado com sucesso.", "success")
     return redirect(url_for("admin.gestao_usuarios"))
+
+
+@admin_bp.route("/admin/usuarios/<int:user_id>/excluir", methods=["POST"])
+def excluir_usuario(user_id):
+    if not current_user.is_authenticated:
+        return _delete_user_response("Autenticação necessária.", 401)
+
+    actor = User.query.filter_by(id=current_user.id, is_active=True).with_for_update().first()
+    if not actor or actor.profile != "Admin":
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user_id,
+            descricao="Tentativa não autorizada de exclusão de usuário.",
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Você não possui permissão para excluir usuários.", 403)
+
+    user = User.query.filter_by(id=user_id).with_for_update().first()
+    if not user:
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user_id,
+            descricao=f"Tentativa de excluir usuário inexistente: {user_id}.",
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Usuário não encontrado.", 404)
+
+    if user.id == actor.id:
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user.id,
+            descricao="Administrador tentou excluir a própria conta.",
+            alteracoes={"profile": {"anterior": user.profile, "novo": user.profile}},
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Você não pode excluir a própria conta.", 400)
+
+    if not user.is_active or user.deleted_at is not None:
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user.id,
+            descricao=f"Tentativa de excluir usuário já excluído: {user.username}.",
+            alteracoes={"is_active": {"anterior": user.is_active, "novo": user.is_active}},
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Usuário já está excluído.", 409)
+
+    if user.profile == "Admin":
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user.id,
+            descricao=f"Tentativa de excluir administrador: {user.username}.",
+            alteracoes={"profile": {"anterior": user.profile, "novo": user.profile}},
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Administradores não podem ser excluídos.", 403)
+
+    if user.profile not in {"User", "Viewer"}:
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETE_DENIED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user.id,
+            descricao=f"Tentativa de excluir usuário com perfil não permitido: {user.profile}.",
+            alteracoes={"profile": {"anterior": user.profile, "novo": user.profile}},
+            resultado="NEGADO",
+        )
+        return _delete_user_response("Perfil do usuário não permite exclusão.", 403)
+
+    old_profile = user.profile
+    old_active = user.is_active
     try:
-        parsed = datetime.strptime(value, "%Y-%m-%d").date()
-        return datetime.combine(parsed, time.max if end else time.min)
-    except ValueError:
-        return None
+        user.is_active = False
+        user.deleted_at = datetime.now(timezone.utc)
+        user.deleted_by_id = actor.id
+        registrar_auditoria(
+            acao=AuditAction.USER_DELETED,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=user.id,
+            descricao=f"Usuário excluído logicamente: {user.username}.",
+            alteracoes={
+                "profile": {"anterior": old_profile, "novo": old_profile},
+                "is_active": {"anterior": old_active, "novo": False},
+                "deleted_by_id": {"anterior": None, "novo": actor.id},
+                "deleted_at": {"anterior": None, "novo": user.deleted_at.isoformat()},
+            },
+            commit=False,
+            raise_on_error=True,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _delete_user_response("Não foi possível excluir o usuário.", 500)
+    return _delete_user_response("Usuário excluído com sucesso.", 200, category="success")
 
 
 @admin_bp.route("/admin/logs-auditoria", methods=["GET"])

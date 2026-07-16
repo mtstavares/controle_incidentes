@@ -1,4 +1,4 @@
-const NOTIFICATION_DURATION_MS = 3000;
+﻿const NOTIFICATION_DURATION_MS = 3000;
 const NOTIFICATION_EXIT_DURATION_MS = 200;
 
 function dismissNotification(notification) {
@@ -53,8 +53,8 @@ function showApplicationNotification(message, type = 'info') {
     closeButton.type = 'button';
     closeButton.className = 'app-notification__close';
     closeButton.dataset.notificationClose = '';
-    closeButton.setAttribute('aria-label', 'Fechar notificação');
-    closeButton.textContent = '×';
+    closeButton.setAttribute('aria-label', 'Fechar notificaÃ§Ã£o');
+    closeButton.textContent = 'Ã—';
 
     notification.appendChild(content);
     notification.appendChild(closeButton);
@@ -104,17 +104,155 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    const commandSelect = document.querySelector('[data-command-select]');
     const btlSelect = document.getElementById('btl_select');
     const cpaInput = document.getElementById('cpa_input');
+    const btlInput = document.getElementById('btl_input');
+    const unitHelp = document.querySelector('[data-unit-help]');
 
-    if (btlSelect && cpaInput) {
-        btlSelect.addEventListener('change', function () {
+    if (commandSelect && btlSelect && cpaInput && btlInput) {
+        const originalUnitOptions = Array.from(btlSelect.options)
+            .filter(function (option) { return option.value; })
+            .map(function (option) {
+                return {
+                    value: option.value,
+                    cpa: option.getAttribute('data-cpa') || '',
+                    name: option.getAttribute('data-unit-name') || option.textContent.trim(),
+                    selected: option.selected
+                };
+            });
+
+        const buildPlaceholder = function (text) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = text;
+            return option;
+        };
+
+        const setSelectedUnitName = function () {
             const selectedOption = btlSelect.options[btlSelect.selectedIndex];
-            cpaInput.value = selectedOption && selectedOption.value
-                ? selectedOption.getAttribute('data-cpa') || ''
+            btlInput.value = selectedOption && selectedOption.value
+                ? selectedOption.getAttribute('data-unit-name') || selectedOption.textContent.trim()
                 : '';
+        };
+
+        const syncIncidentUnits = function (options = {}) {
+            const commandId = commandSelect.value;
+            const selectedCommand = commandSelect.options[commandSelect.selectedIndex];
+            const previousUnitValue = options.clearUnit === false ? btlSelect.value : '';
+            const seenValues = new Set();
+
+            cpaInput.value = selectedCommand ? selectedCommand.getAttribute('data-command-name') || '' : '';
+
+            const availableUnits = originalUnitOptions.filter(function (unit) {
+                if (!commandId || unit.cpa !== commandId || seenValues.has(unit.value)) {
+                    return false;
+                }
+                seenValues.add(unit.value);
+                return true;
+            });
+
+            btlSelect.replaceChildren(buildPlaceholder(
+                commandId
+                    ? (availableUnits.length ? 'Selecione o Batalhão/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
+                    : 'Selecione primeiro o CPA/Grande Comando'
+            ));
+
+            availableUnits.forEach(function (unit) {
+                const option = document.createElement('option');
+                option.value = unit.value;
+                option.textContent = unit.name;
+                option.setAttribute('data-cpa', unit.cpa);
+                option.setAttribute('data-unit-name', unit.name);
+                btlSelect.appendChild(option);
+            });
+
+            btlSelect.disabled = !commandId || availableUnits.length === 0;
+            btlSelect.value = previousUnitValue && availableUnits.some(function (unit) { return unit.value === previousUnitValue; })
+                ? previousUnitValue
+                : '';
+            setSelectedUnitName();
+
+            if (unitHelp) {
+                unitHelp.textContent = commandId
+                    ? (availableUnits.length ? 'Selecione uma unidade vinculada ao CPA informado.' : 'Nenhuma unidade cadastrada para este CPA.')
+                    : 'Selecione primeiro o CPA/Grande Comando.';
+            }
+        };
+
+        btlSelect.addEventListener('change', setSelectedUnitName);
+
+        commandSelect.addEventListener('change', function () {
+            syncIncidentUnits({ clearUnit: true });
         });
+
+        syncIncidentUnits({ clearUnit: !originalUnitOptions.some(function (unit) { return unit.selected; }) });
     }
+
+    document.querySelectorAll('[data-dashboard-filters]').forEach(function (form) {
+        const cpaSelect = form.querySelector('[data-cpa-filter]');
+        const btlFilterSelect = form.querySelector('[data-btl-filter]');
+
+        if (!cpaSelect || !btlFilterSelect) return;
+
+        const originalBtlOptions = Array.from(btlFilterSelect.options)
+            .filter(function (option) { return option.value && option.value !== 'todos'; })
+            .map(function (option) {
+                return {
+                    value: option.value,
+                    label: option.textContent.trim(),
+                    cpa: option.getAttribute('data-cpa') || 'todos',
+                    selected: option.selected
+                };
+            });
+
+        const buildTodosOption = function () {
+            const option = document.createElement('option');
+            option.value = 'todos';
+            option.textContent = 'Todos';
+            option.setAttribute('data-cpa', 'todos');
+            return option;
+        };
+
+        const syncBtlOptions = function (options = {}) {
+            const cpa = cpaSelect.value || 'todos';
+            const previousValue = options.clearBtl ? 'todos' : btlFilterSelect.value;
+            const seenValues = new Set();
+            const availableOptions = originalBtlOptions.filter(function (option) {
+                const isVisible = cpa !== 'todos' && option.cpa === cpa;
+                if (!isVisible || seenValues.has(option.value)) {
+                    return false;
+                }
+                seenValues.add(option.value);
+                return true;
+            });
+
+            btlFilterSelect.replaceChildren(buildTodosOption());
+            availableOptions.forEach(function (item) {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                option.setAttribute('data-cpa', item.cpa);
+                btlFilterSelect.appendChild(option);
+            });
+
+            btlFilterSelect.value = availableOptions.some(function (item) { return item.value === previousValue; })
+                ? previousValue
+                : 'todos';
+            btlFilterSelect.disabled = cpa === 'todos' || availableOptions.length === 0;
+
+            if (cpa === 'todos') {
+                btlFilterSelect.options[0].textContent = 'Selecione primeiro o CPA';
+            } else if (availableOptions.length === 0) {
+                btlFilterSelect.options[0].textContent = 'Nenhuma unidade cadastrada para este CPA';
+            }
+        };
+
+        cpaSelect.addEventListener('change', function () {
+            syncBtlOptions({ clearBtl: true });
+        });
+        syncBtlOptions({ clearBtl: false });
+    });
 
     document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -264,7 +402,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateBrowserUrl();
             } catch (error) {
                 if (error.name !== 'AbortError') {
-                    showApplicationNotification('Não foi possível pesquisar os incidentes.', 'danger');
+                    showApplicationNotification('NÃ£o foi possÃ­vel pesquisar os incidentes.', 'danger');
                 }
             } finally {
                 incidentResults.setAttribute('aria-busy', 'false');
@@ -431,7 +569,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const lowerName = file.name.toLowerCase();
             const extension = allowedExtensions.find(function (ext) { return lowerName.endsWith(ext); });
             if (!extension) {
-                showApplicationNotification('Tipo de arquivo não permitido.', 'danger');
+                showApplicationNotification('Tipo de arquivo nÃ£o permitido.', 'danger');
                 return;
             }
             if (file.size > maxFileSize) {

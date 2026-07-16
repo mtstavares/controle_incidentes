@@ -20,11 +20,11 @@ from app.services.user_service import (
 
 @lm.user_loader
 def user_loader(id):
-    return db.session.query(User).filter_by(id=id).first()
+    return db.session.query(User).filter_by(id=id, is_active=True).first()
 
 
 def allowed_edit_profile(profile):
-    return profile.profile in ["Admin", "User"]
+    return getattr(profile, "is_active", True) and profile.profile in ["Admin", "User"]
 
 
 @users_bp.route("/register", methods=["GET", "POST"])
@@ -63,6 +63,24 @@ def register():
     )
     try:
         db.session.add(new_user)
+        db.session.flush()
+        registrar_auditoria(
+            acao=AuditAction.CRIAR_USUARIO,
+            modulo="Administração",
+            entidade="User",
+            entidade_id=new_user.id,
+            descricao=f"Usuário criado: {username}",
+            alteracoes={
+                "username": {"anterior": None, "novo": username},
+                "name": {"anterior": None, "novo": name},
+                "email": {"anterior": None, "novo": email},
+                "profile": {"anterior": None, "novo": profile},
+                "is_temp_password": {"anterior": None, "novo": True},
+                "must_change_password": {"anterior": None, "novo": True},
+            },
+            commit=False,
+            raise_on_error=True,
+        )
         db.session.commit()
     except IntegrityError as exc:
         db.session.rollback()
@@ -70,21 +88,6 @@ def register():
         flash("Não foi possível criar o usuário. O RE ou e-mail já está cadastrado.", "danger")
         return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors={})
 
-    registrar_auditoria(
-        acao=AuditAction.CRIAR_USUARIO,
-        modulo="Administração",
-        entidade="User",
-        entidade_id=new_user.id,
-        descricao=f"Usuário criado: {username}",
-        alteracoes={
-            "username": {"anterior": None, "novo": username},
-            "name": {"anterior": None, "novo": name},
-            "email": {"anterior": None, "novo": email},
-            "profile": {"anterior": None, "novo": profile},
-            "is_temp_password": {"anterior": None, "novo": True},
-            "must_change_password": {"anterior": None, "novo": True},
-        },
-    )
     current_app.logger.info("%s cadastrou o usuário: %s", current_user.username, username)
     flash("Usuário criado com sucesso.", "success")
     return redirect(url_for("admin.gestao_usuarios"))
@@ -99,7 +102,7 @@ def login():
     password = request.form.get("password") or ""
     user = db.session.query(User).filter(db.func.lower(User.username) == username.lower()).first()
 
-    if not user or not senha_confere(user, password):
+    if not user or not user.is_active or not senha_confere(user, password):
         registrar_auditoria(
             acao=AuditAction.LOGIN_FALHOU,
             modulo="Autenticação",
@@ -146,7 +149,6 @@ def change_password():
         current_user.password = gerar_hash_senha(new_password)
         current_user.is_temp_password = False
         current_user.must_change_password = False
-        db.session.commit()
         registrar_auditoria(
             acao=AuditAction.ALTERAR_SENHA,
             modulo="Autenticação",
@@ -157,7 +159,10 @@ def change_password():
                 "is_temp_password": {"anterior": temp_password_before, "novo": False},
                 "must_change_password": {"anterior": must_change_before, "novo": False},
             },
+            commit=False,
+            raise_on_error=True,
         )
+        db.session.commit()
         current_app.logger.info("%s alterou sua senha.", current_user.username)
         flash("Senha alterada com sucesso!", "success")
         return redirect(url_for("main.home"))

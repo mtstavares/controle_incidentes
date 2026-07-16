@@ -2,7 +2,7 @@
 {% from 'components/macros.html' import page_header %}
 
 {% block content %}
-{{ page_header('Painel inicial', 'Visão de entrada para acompanhamento e operação dos incidentes registrados no ambiente DivCiber.') }}
+{{ page_header('Painel inicial') }}
 
 <section class="metric-grid" aria-label="Atalhos principais">
     <article class="metric-card">
@@ -13,12 +13,12 @@
     <article class="metric-card">
         <p class="metric-card__label">Indicadores</p>
         <p class="metric-card__value">Status</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes_status') }}">Ver dashboard</a>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes', view='status') }}">Ver dashboard</a>
     </article>
     <article class="metric-card">
         <p class="metric-card__label">Distribuição</p>
         <p class="metric-card__value">CPA/BTL</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes_cpa_btl') }}">Analisar</a>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes', view='cpa-btl') }}">Analisar</a>
     </article>
     {% if current_user.profile in ['Admin', 'User'] %}
     <article class="metric-card">
@@ -36,9 +36,9 @@
                 <img src="{{ url_for('static', filename='img/logo_divciber.jpg') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 180px;">
             </div>
             <div class="col-lg-9">
-                <p class="eyebrow">Sessão ativa</p>
+                
                 <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
-                <p class="mb-0 text-muted">Use o menu lateral para navegar entre registros, dashboards e funcionalidades administrativas conforme seu perfil de acesso.</p>
+                <p class="mb-0 text-muted">O preço da liberdade é a eterna vigilância</p>
             </div>
         </div>
     </div>

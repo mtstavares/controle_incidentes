@@ -1,9 +1,12 @@
 import unittest
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from app import create_app, db, hash
-from app.models import AuditLog, Incidente, IncidenteObs, StatusIncidente, TipoIncidente, Unidades, User
+from app.models import AuditLog, Incidente, IncidenteObs, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
+from app.seeds.organizational_units import seed_development_organizational_units
 
 
 class TestConfig:
@@ -36,6 +39,11 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         db.session.add(StatusIncidente(status="Encerrado", desc_status=""))
         db.session.add(TipoIncidente(tipo_incidente="Phishing", desc_incidente=""))
         db.session.add(Unidades(cpa="CPA Teste", btl="BTL Teste"))
+        db.session.flush()
+        command = OrganizationalCommand(name="CPA Teste", active=True, sort_order=1)
+        db.session.add(command)
+        db.session.flush()
+        db.session.add(OrganizationalUnit(command_id=command.id, name="BTL Teste", normalized_name="btl teste", active=True, sort_order=1))
         db.session.commit()
 
     def login(self, username="admin", password="admin123"):
@@ -208,6 +216,183 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertIn('href="/incidentes"', unsafe_detail)
         self.assertNotIn("evil.example", unsafe_detail)
 
+    def test_consolidated_incident_dashboard_page_and_api(self):
+        self.login("admin", "admin123")
+        admin = User.query.filter_by(username="admin").first()
+        today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+        month_start = today.replace(day=1)
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1)
+        month_end = next_month - timedelta(days=1)
+
+        db.session.add(Unidades(cpa="CPA/M-1", btl="7º BPM/M"))
+        db.session.add(Unidades(cpa="CPA/M-1", btl="11º BPM/M"))
+        db.session.add(Unidades(cpa="CPA/M-2", btl="2º BPM/M"))
+        db.session.add_all([
+            Incidente(
+                status_incident="Em Análise",
+                start_date=datetime.combine(month_start, datetime.min.time()),
+                incident_type="Phishing",
+                report_number="DASH-1",
+                ticket_number="TCK-1",
+                cpa="CPA/M-1",
+                btl="7º BPM/M",
+                cia="1 CIA",
+                description="Dashboard teste 1",
+                user_id=admin.id,
+            ),
+            Incidente(
+                status_incident="Encerrado",
+                start_date=datetime.combine(month_start, datetime.min.time()),
+                incident_type="Phishing",
+                report_number="DASH-2",
+                ticket_number="TCK-2",
+                cpa="CPA/M-1",
+                btl="11º BPM/M",
+                cia="1 CIA",
+                description="Dashboard teste 2",
+                user_id=admin.id,
+            ),
+            Incidente(
+                status_incident="Encerrado",
+                start_date=datetime.combine(month_end, datetime.min.time()),
+                incident_type="Phishing",
+                report_number="DASH-3",
+                ticket_number="TCK-3",
+                cpa="CPA/M-2",
+                btl="2º BPM/M",
+                cia="1 CIA",
+                description="Dashboard teste 3",
+                user_id=admin.id,
+            ),
+        ])
+        db.session.commit()
+
+        page = self.client.get("/dashboard-incidentes")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("Dashboard de Incidentes", html)
+        self.assertIn(f'value="{month_start.isoformat()}"', html)
+        self.assertIn(f'value="{month_end.isoformat()}"', html)
+
+        status_response = self.client.get(
+            f"/api/dashboard/incidents?view=status&startDate={month_start.isoformat()}&endDate={month_end.isoformat()}"
+        )
+        self.assertEqual(status_response.status_code, 200)
+        status_data = status_response.get_json()
+        self.assertEqual(status_data["chart"]["type"], "status")
+        self.assertEqual(sum(item["total"] for item in status_data["chart"]["items"]), status_data["cards"]["total"])
+
+        hierarchy_response = self.client.get(
+            f"/api/dashboard/incidents?view=cpa-btl&startDate={month_start.isoformat()}&endDate={month_end.isoformat()}"
+        )
+        self.assertEqual(hierarchy_response.status_code, 200)
+        hierarchy_data = hierarchy_response.get_json()
+        self.assertEqual(hierarchy_data["chart"]["type"], "cpa-btl")
+        groups = {group["cpaName"]: group for group in hierarchy_data["chart"]["groups"]}
+        self.assertIn("CPA/M-1", groups)
+        self.assertGreaterEqual(len(groups["CPA/M-1"]["battalions"]), 2)
+        self.assertEqual(
+            sum(btl["total"] for btl in groups["CPA/M-1"]["battalions"]),
+            groups["CPA/M-1"]["total"],
+        )
+
+        cpa_page = self.client.get(
+            f"/dashboard-incidentes?view=cpa-btl&startDate={month_start.isoformat()}&endDate={month_end.isoformat()}"
+        ).get_data(as_text=True)
+        self.assertIn("7º BPM/M", cpa_page)
+        self.assertIn("hierarchy-bar", cpa_page)
+
+        invalid_relation = self.client.get("/api/dashboard/incidents?view=cpa-btl&cpa=CPA/M-1&btl=2º BPM/M")
+        self.assertEqual(invalid_relation.status_code, 400)
+
+        invalid_date = self.client.get("/api/dashboard/incidents?startDate=2026-02-30")
+        self.assertEqual(invalid_date.status_code, 400)
+
+        legacy_status = self.client.get("/dashboard/incidentes_status", follow_redirects=False)
+        self.assertEqual(legacy_status.status_code, 302)
+        self.assertIn("/dashboard-incidentes", legacy_status.headers["Location"])
+
+    def test_development_organizational_units_seed_is_idempotent(self):
+        first = seed_development_organizational_units()
+        second = seed_development_organizational_units()
+
+        self.assertEqual(first["created"], 12)
+        self.assertEqual(second["created"], 0)
+        self.assertGreaterEqual(second["existing"], 12)
+
+        cpa_m5 = Unidades.query.filter_by(cpa="CPA/M-5").all()
+        cpa_m1 = Unidades.query.filter_by(cpa="CPA/M-1").all()
+
+        self.assertEqual({unidade.btl for unidade in cpa_m5}, {"SEDE", "4º BPM/M", "16º BPM/M", "23º BPM/M", "49º BPM/M"})
+        self.assertEqual({unidade.btl for unidade in cpa_m1}, {"SEDE", "7º BPM/M", "11º BPM/M", "13º BPM/M", "7º BAEP"})
+        self.assertEqual(Unidades.query.filter_by(cpa="CPA/M-5", btl="4º BPM/M").count(), 1)
+
+        command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
+        command_m1 = OrganizationalCommand.query.filter_by(name="CPA/M-1").first()
+        self.assertIsNotNone(command_m5)
+        self.assertIsNotNone(command_m1)
+        self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="SEDE").count(), 1)
+        self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="SEDE").count(), 1)
+
+    def test_incident_form_uses_dependent_command_units_and_backend_rejects_mismatch(self):
+        seed_development_organizational_units()
+        self.login("user", "user123")
+        command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
+        command_m1 = OrganizationalCommand.query.filter_by(name="CPA/M-1").first()
+        unit_23 = OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="23º BPM/M").first()
+        unit_7 = OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="7º BPM/M").first()
+
+        form_html = self.client.get("/incidente/new").get_data(as_text=True)
+        self.assertIn("command_select", form_html)
+        self.assertIn("Selecione primeiro o CPA/Grande Comando", form_html)
+        self.assertIn("CPA/M-5", form_html)
+        self.assertNotIn("CPA/M-5 - SEDE", form_html)
+
+        units_response = self.client.get(f"/api/organizational-commands/{command_m5.id}/units")
+        self.assertEqual(units_response.status_code, 200)
+        unit_names = [unit["name"] for unit in units_response.get_json()["units"]]
+        self.assertEqual(unit_names, ["SEDE", "4º BPM/M", "16º BPM/M", "23º BPM/M", "49º BPM/M"])
+
+        invalid = self.client.post("/incidente/new", data={
+            "status_incidente": "Em Análise",
+            "registration_date": "2026-07-15",
+            "incident_type": "Tentativa de intrusão",
+            "report_number": "REL-MISMATCH",
+            "message_number": "MSG-MISMATCH",
+            "ticket_number": "INC-MISMATCH",
+            "command_id": str(command_m5.id),
+            "unit_id": str(unit_7.id),
+            "description": "<p>Descrição válida</p>",
+        })
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("pertence ao CPA", invalid.get_data(as_text=True))
+
+        valid = self.client.post("/incidente/new", data={
+            "status_incidente": "Em Análise",
+            "registration_date": "2026-07-15",
+            "incident_type": "Tentativa de intrusão",
+            "report_number": "REL-CPA-M5",
+            "message_number": "MSG-CPA-M5",
+            "ticket_number": "INC-CPA-M5",
+            "command_id": str(command_m5.id),
+            "unit_id": str(unit_23.id),
+            "description": "<p>Descrição válida</p>",
+        }, follow_redirects=True)
+        self.assertIn("Incidente registrado com sucesso", valid.get_data(as_text=True))
+        incident = Incidente.query.filter_by(report_number="REL-CPA-M5").first()
+        self.assertEqual(incident.cpa, "CPA/M-5")
+        self.assertEqual(incident.btl, "23º BPM/M")
+        self.assertEqual(incident.command_id, command_m5.id)
+        self.assertEqual(incident.unit_id, unit_23.id)
+
+        dashboard = self.client.get(
+            "/api/dashboard/incidents?view=cpa-btl&incidentType=Tentativa de intrusão&cpa=CPA/M-5&btl=23º BPM/M&startDate=2026-07-01&endDate=2026-07-31"
+        ).get_json()
+        self.assertGreaterEqual(dashboard["cards"]["total"], 1)
+
     def test_incident_registration_date_types_fields_sanitizer_and_pdf_attachment(self):
         self.login("user", "user123")
         form_html = self.client.get("/incidente/new").get_data(as_text=True)
@@ -309,6 +494,76 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertEqual(invalid_attachment.status_code, 400)
         self.assertIn("Tipo de arquivo não permitido", invalid_html)
         self.assertIn("REL-PRESERVAR", invalid_html)
+
+    def test_utf8_temporal_integrity_and_audit_rollback(self):
+        self.login("user", "user123")
+        response = self.client.post("/incidente/new", data={
+            "status_incidente": "Em Análise",
+            "registration_date": "2026-07-15",
+            "incident_type": "Transferência de arquivo malicioso",
+            "report_number": "Número do relatório",
+            "message_number": "MSG-UTF8",
+            "ticket_number": "Quebra de Confidencialidade",
+            "btl": "BTL Teste",
+            "cpa": "CPA Teste",
+            "cia": "Incidente envolvendo VPN corporativa",
+            "description": "<p>Descrição com ç, ã, é, ó e Transferência</p>",
+            "timestamp": "1999-01-01T00:00:00Z",
+            "created_at": "1999-01-01T00:00:00Z",
+            "updated_at": "1999-01-01T00:00:00Z",
+        }, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertIn("Incidente registrado com sucesso", html)
+
+        incident = Incidente.query.filter_by(message_number="MSG-UTF8").first()
+        self.assertIsNotNone(incident)
+        self.assertEqual(incident.start_date.strftime("%H:%M:%S"), "00:00:00")
+        self.assertIsNotNone(incident.created_at)
+        self.assertIsNotNone(incident.updated_at)
+        self.assertNotEqual(incident.created_at.year, 1999)
+        self.assertIn("Descrição", incident.description)
+        self.assertIn("Transferência", incident.description)
+        self.assertIn("Número do relatório", incident.report_number)
+        self.assertIn("Quebra de Confidencialidade", incident.ticket_number)
+        self.assertIn("Incidente envolvendo VPN corporativa", incident.cia)
+        corrupted = ("Descri?ão", "Transfer?ncia", "RelatÃƒÂ³rio", "Confidencialidadeï¿½")
+        for value in [incident.description, incident.report_number, incident.ticket_number, incident.cia]:
+            for bad in corrupted:
+                self.assertNotIn(bad, value)
+
+        audit_log = AuditLog.query.filter_by(acao="CRIAR", entidade="Incidente", entidade_id=str(incident.id)).first()
+        self.assertIsNotNone(audit_log)
+        self.assertIsNotNone(audit_log.timestamp)
+        self.assertIsNotNone(audit_log.occurred_at)
+        self.assertIsNotNone(audit_log.request_id)
+        self.assertNotIn("password", str(audit_log.alteracoes).lower())
+        self.assertNotIn("cookie", str(audit_log.alteracoes).lower())
+        sao_paulo = audit_log.timestamp.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo"))
+        self.assertEqual(sao_paulo.strftime("%d/%m/%Y %H:%M:%S"), self.app.jinja_env.filters["sp_datetime"](audit_log.timestamp))
+
+        charset_response = self.client.get("/incidente/new")
+        self.assertIn("charset=utf-8", charset_response.headers["Content-Type"].lower())
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit failure")
+
+        before_count = Incidente.query.count()
+        with patch("app.blueprints.incidente.routes.registrar_auditoria", side_effect=fail_audit):
+            failed = self.client.post("/incidente/new", data={
+                "status_incidente": "Em Análise",
+                "registration_date": "2026-07-15",
+                "incident_type": "Phishing",
+                "report_number": "ROLLBACK-TEST",
+                "message_number": "MSG-ROLLBACK",
+                "ticket_number": "INC-ROLLBACK",
+                "btl": "BTL Teste",
+                "cpa": "CPA Teste",
+                "cia": "1 CIA",
+                "description": "<p>Deve sofrer rollback</p>",
+            })
+        self.assertEqual(failed.status_code, 500)
+        self.assertEqual(Incidente.query.count(), before_count)
+        self.assertIsNone(Incidente.query.filter_by(report_number="ROLLBACK-TEST").first())
 
     def test_user_management_access_and_sidebar(self):
         self.assertEqual(self.client.get("/admin/usuarios").status_code, 302)
@@ -428,6 +683,99 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.client.get("/logout")
         self.login("user", "user123")
         self.assertEqual(self.client.post(f"/admin/usuarios/{admin.id}/perfil", data={"profile": "Viewer"}).status_code, 403)
+
+    def test_admin_can_soft_delete_user_and_viewer(self):
+        self.login("admin", "admin123")
+        admin = User.query.filter_by(username="admin").first()
+        user = User.query.filter_by(username="user").first()
+        viewer = User.query.filter_by(username="viewer").first()
+
+        response = self.client.post(f"/admin/usuarios/{user.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(response.status_code, 200)
+        db.session.refresh(user)
+        self.assertFalse(user.is_active)
+        self.assertIsNotNone(user.deleted_at)
+        self.assertEqual(user.deleted_by_id, admin.id)
+        delete_log = AuditLog.query.filter_by(acao="USER_DELETED", entidade="User", entidade_id=str(user.id)).first()
+        self.assertIsNotNone(delete_log)
+        self.assertEqual(delete_log.alteracoes["is_active"]["anterior"], "True")
+        self.assertEqual(delete_log.alteracoes["is_active"]["novo"], "False")
+        self.assertNotIn("password", str(delete_log.alteracoes).lower())
+
+        response = self.client.post(f"/admin/usuarios/{viewer.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(response.status_code, 200)
+        db.session.refresh(viewer)
+        self.assertFalse(viewer.is_active)
+
+    def test_user_delete_denied_cases_and_authentication_effects(self):
+        self.login("admin", "admin123")
+        admin = User.query.filter_by(username="admin").first()
+        other_admin = User(username="admin2", name="Admin Dois", email="admin2@test", profile="Admin", is_temp_password=False, must_change_password=False, password=hash("admin2123"))
+        db.session.add(other_admin)
+        db.session.commit()
+
+        own = self.client.post(f"/admin/usuarios/{admin.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(own.status_code, 400)
+        self.assertIn("própria conta", own.get_json()["message"])
+
+        admin_delete = self.client.post(f"/admin/usuarios/{other_admin.id}/excluir", data={"profile": "User"}, headers={"Accept": "application/json"})
+        self.assertEqual(admin_delete.status_code, 403)
+        db.session.refresh(other_admin)
+        self.assertTrue(other_admin.is_active)
+
+        missing = self.client.post("/admin/usuarios/999999/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(missing.status_code, 404)
+
+        target = User.query.filter_by(username="viewer").first()
+        ok = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(ok.status_code, 200)
+        again = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(again.status_code, 409)
+
+        self.client.get("/logout")
+        denied_login = self.client.post("/login", data={"username": "viewer", "password": "viewer123"}, follow_redirects=True)
+        self.assertIn("Nome de usuário ou senha incorretos", denied_login.get_data(as_text=True))
+
+        self.login("admin", "admin123")
+        html = self.client.get("/admin/usuarios").get_data(as_text=True)
+        self.assertNotIn("Viewer Teste", html)
+
+        denied_logs = AuditLog.query.filter_by(acao="USER_DELETE_DENIED").all()
+        self.assertGreaterEqual(len(denied_logs), 3)
+        self.assertNotIn("viewer123", str([log.alteracoes for log in denied_logs]))
+
+    def test_non_admin_and_unauthenticated_cannot_delete_users(self):
+        target = User.query.filter_by(username="viewer").first()
+        unauthenticated = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(unauthenticated.status_code, 401)
+
+        self.login("user", "user123")
+        denied = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(denied.status_code, 403)
+        db.session.refresh(target)
+        self.assertTrue(target.is_active)
+
+        self.client.get("/logout")
+        self.login("viewer", "viewer123")
+        denied_viewer = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+        self.assertEqual(denied_viewer.status_code, 403)
+
+    def test_user_delete_audit_failure_rolls_back(self):
+        self.login("admin", "admin123")
+        target = User.query.filter_by(username="user").first()
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit failure")
+
+        with patch("app.blueprints.admin.routes.registrar_auditoria", side_effect=fail_audit):
+            response = self.client.post(f"/admin/usuarios/{target.id}/excluir", headers={"Accept": "application/json"})
+
+        self.assertEqual(response.status_code, 500)
+        db.session.rollback()
+        db.session.refresh(target)
+        self.assertTrue(target.is_active)
+        self.assertIsNone(target.deleted_at)
+        self.assertIsNone(target.deleted_by_id)
 
 
 if __name__ == "__main__":

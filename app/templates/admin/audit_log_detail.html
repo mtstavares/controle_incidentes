@@ -15,7 +15,7 @@
     </div>
     <div class="app-card__body">
         <div class="detail-grid">
-            <div class="detail-item"><span class="detail-item__label">Timestamp UTC</span><span class="detail-item__value">{{ log.timestamp.strftime('%d/%m/%Y %H:%M:%S') }}</span></div>
+            <div class="detail-item"><span class="detail-item__label">Data/hora</span><span class="detail-item__value">{{ log.timestamp|sp_datetime }}</span></div>
             <div class="detail-item"><span class="detail-item__label">Usuário</span><span class="detail-item__value">{{ log.usuario_identificacao }}</span></div>
             <div class="detail-item"><span class="detail-item__label">Resultado</span><span class="detail-item__value">{{ log.resultado }}</span></div>
             <div class="detail-item"><span class="detail-item__label">Módulo</span><span class="detail-item__value">{{ log.modulo }}</span></div>

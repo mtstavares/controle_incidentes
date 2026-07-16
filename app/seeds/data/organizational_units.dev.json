@@ -1,0 +1,24 @@
+{
+  "organizationalUnits": [
+    {
+      "cpa": "CPA/M-5",
+      "battalions": [
+        "SEDE",
+        "4º BPM/M",
+        "16º BPM/M",
+        "23º BPM/M",
+        "49º BPM/M"
+      ]
+    },
+    {
+      "cpa": "CPA/M-1",
+      "battalions": [
+        "SEDE",
+        "7º BPM/M",
+        "11º BPM/M",
+        "13º BPM/M",
+        "7º BAEP"
+      ]
+    }
+  ]
+}

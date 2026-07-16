@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Dashboard de Incidentes', 'Indicadores consolidados por status, CPA e batalhão com filtros compartilhados.') }}
+
+{% set current_view = filters.view %}
+
+<nav class="segmented-tabs mb-4" aria-label="Visualizações do dashboard">
+    <a class="segmented-tabs__item {% if current_view == 'status' %}is-active{% endif %}" href="{{ url_for('incidente.dashboard_incidentes', view='status', startDate=filters.startDate, endDate=filters.endDate, incidentType=filters.incidentType, status=filters.status, cpa=filters.cpa, btl=filters.btl) }}" {% if current_view == 'status' %}aria-current="page"{% endif %}>Por Status</a>
+    <a class="segmented-tabs__item {% if current_view == 'cpa-btl' %}is-active{% endif %}" href="{{ url_for('incidente.dashboard_incidentes', view='cpa-btl', startDate=filters.startDate, endDate=filters.endDate, incidentType=filters.incidentType, status=filters.status, cpa=filters.cpa, btl=filters.btl) }}" {% if current_view == 'cpa-btl' %}aria-current="page"{% endif %}>Por CPA/BTL</a>
+</nav>
+
+<section class="app-card mb-4" aria-labelledby="dashboard-filter-title">
+    <div class="app-card__header">
+        <h2 id="dashboard-filter-title" class="h5 mb-0">Filtros</h2>
+    </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('incidente.dashboard_incidentes') }}" class="filter-grid" data-dashboard-filters>
+            <input type="hidden" name="view" value="{{ current_view }}">
+            <div class="span-3">
+                <label for="startDate" class="form-label">Data inicial</label>
+                <input type="date" class="form-control" id="startDate" name="startDate" value="{{ filters.startDate }}">
+            </div>
+            <div class="span-3">
+                <label for="endDate" class="form-label">Data final</label>
+                <input type="date" class="form-control" id="endDate" name="endDate" value="{{ filters.endDate }}">
+            </div>
+            <div class="span-3">
+                <label for="status" class="form-label">Status</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="todos" {% if filters.status == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for status_inc in statuses %}
+                        <option value="{{ status_inc.status }}" {% if filters.status == status_inc.status %}selected{% endif %}>{{ status_inc.status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="incidentType" class="form-label">Tipo de incidente</label>
+                <select class="form-select" id="incidentType" name="incidentType">
+                    <option value="todos" {% if filters.incidentType == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for type in incident_types %}
+                        <option value="{{ type.tipo_incidente }}" {% if filters.incidentType == type.tipo_incidente %}selected{% endif %}>{{ type.tipo_incidente }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="cpa" class="form-label">CPA</label>
+                <select class="form-select" id="cpa" name="cpa" data-cpa-filter>
+                    <option value="todos" {% if filters.cpa == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for cpa_name in cpas %}
+                        <option value="{{ cpa_name }}" {% if filters.cpa == cpa_name %}selected{% endif %}>{{ cpa_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="btl" class="form-label">BTL</label>
+                <select class="form-select" id="btl" name="btl" data-btl-filter>
+                    <option value="todos" data-cpa="todos" {% if filters.btl == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for unidade in unidades %}
+                        <option value="{{ unidade.btl }}" data-cpa="{{ unidade.cpa }}" {% if filters.btl == unidade.btl %}selected{% endif %}>{{ unidade.btl }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-6 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end justify-content-end gap-2">
+                <button type="submit" class="btn btn-primary">Aplicar filtros</button>
+                <a href="{{ url_for('incidente.dashboard_incidentes', view=current_view) }}" class="btn btn-outline-secondary">Limpar filtros</a>
+            </div>
+        </form>
+    </div>
+</section>
+
+<section class="metric-grid-incidentes" aria-label="Totais do dashboard">
+    <article class="metric-card"><p class="metric-card__label">Total de incidentes</p><p class="metric-card__value">{{ cards.total }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Incidentes em aberto</p><p class="metric-card__value">{{ cards.open }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Incidentes em andamento</p><p class="metric-card__value">{{ cards.inProgress }}</p></article>
+    <article class="metric-card"><p class="metric-card__label">Incidentes concluídos</p><p class="metric-card__value">{{ cards.closed }}</p></article>
+</section>
+
+{% if current_view == 'status' %}
+<section class="app-card" aria-labelledby="status-chart-title">
+    <div class="app-card__header">
+        <h2 id="status-chart-title" class="h5 mb-0">Dashboard por Status</h2>
+    </div>
+    <div class="app-card__body">
+        {% if cards.total > 0 %}
+            {{ status_pie_html | safe }}
+        {% else %}
+            {{ empty_state('Nenhum incidente encontrado para os filtros selecionados.', 'Altere os filtros ou cadastre incidentes no período.') }}
+        {% endif %}
+    </div>
+</section>
+{% else %}
+<section class="app-card" aria-labelledby="cpa-chart-title">
+    <div class="app-card__header">
+        <h2 id="cpa-chart-title" class="h5 mb-0">Dashboard por CPA/BTL</h2>
+    </div>
+    <div class="app-card__body">
+        {% if cards.total > 0 and chart.groups %}
+        <div class="hierarchy-chart" style="--chart-max: {{ max_btl_total or 1 }};">
+            <div class="hierarchy-chart__axis" aria-hidden="true">
+                <span>0</span>
+                <span>{{ ((max_btl_total or 0) / 2)|round(0, 'ceil')|int }}</span>
+                <span>{{ max_btl_total }}</span>
+            </div>
+            {% for group in chart.groups %}
+            <section class="hierarchy-group" aria-labelledby="cpa-{{ loop.index }}">
+                <h3 id="cpa-{{ loop.index }}" class="hierarchy-group__title">{{ group.cpaName }} — {{ group.total }} incidentes</h3>
+                {% for btl in group.battalions %}
+                <div class="hierarchy-bar-row">
+                    <span class="hierarchy-bar-row__label">{{ btl.btlName }}</span>
+                    <div class="hierarchy-bar-track" title="{{ btl.btlName }}: {{ btl.total }} incidentes">
+                        <div class="hierarchy-bar" style="width: {{ (btl.total / (max_btl_total or 1) * 100)|round(2) }}%;">
+                            <span>{{ btl.btlName }}</span>
+                        </div>
+                    </div>
+                    <strong class="hierarchy-bar-row__value">{{ btl.total }}</strong>
+                </div>
+                {% endfor %}
+            </section>
+            {% endfor %}
+        </div>
+        {% else %}
+            {{ empty_state('Nenhum incidente encontrado para os filtros selecionados.', 'Altere os filtros ou cadastre incidentes no período.') }}
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

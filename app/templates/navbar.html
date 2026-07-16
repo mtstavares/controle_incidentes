@@ -29,9 +29,9 @@
     <div class="sidebar-section">
         <p class="sidebar-label">Inteligência</p>
         <nav class="sidebar-nav">
-            <a class="sidebar-link" href="{{ url_for('incidente.dashboard_incidentes_cpa_btl') }}" {% if endpoint == 'incidente.dashboard_incidentes_cpa_btl' %}aria-current="page"{% endif %}>
+            <a class="sidebar-link" href="{{ url_for('incidente.dashboard_incidentes') }}" {% if endpoint in ['incidente.dashboard_incidentes', 'incidente.api_dashboard_incidents'] %}aria-current="page"{% endif %}>
                 <span class="sidebar-link__icon" aria-hidden="true">▥</span>
-                <span>Dashboard incidentes</span>
+                <span>Dashboard de Incidentes</span>
             </a>
             <a class="sidebar-link" href="{{ url_for('dashboard.dashboard_credenciais') }}" {% if endpoint == 'dashboard.dashboard_credenciais' %}aria-current="page"{% endif %}>
                 <span class="sidebar-link__icon" aria-hidden="true">◇</span>

@@ -54,6 +54,33 @@
                     <button class="btn btn-outline-secondary" type="submit" data-loading-text="Salvando..." onclick="return confirm('Confirma a alteração de perfil deste usuário?')">Salvar perfil</button>
                 </div>
             </form>
+            {% if current_user.profile == 'Admin' and usuario.profile in ['User', 'Viewer'] and usuario.id != current_user.id and usuario.is_active %}
+            <div class="user-card__delete-action">
+                <button class="btn btn-danger w-100" type="button" onclick="document.getElementById('delete-user-{{ usuario.id }}').showModal()">Excluir usuário</button>
+            </div>
+            <dialog class="confirm-dialog" id="delete-user-{{ usuario.id }}" aria-labelledby="delete-user-title-{{ usuario.id }}">
+                <form method="dialog" class="confirm-dialog__panel">
+                    <h3 id="delete-user-title-{{ usuario.id }}" class="h5 mb-3">Excluir usuário</h3>
+                    <p class="mb-2">Tem certeza de que deseja excluir este usuário?</p>
+                    <p class="text-muted">Esta ação removerá o acesso do usuário ao sistema.</p>
+                    <dl class="record-meta record-meta--single">
+                        <div>
+                            <dt>Nome</dt>
+                            <dd>{{ usuario.name }}</dd>
+                        </div>
+                        <div>
+                            <dt>Perfil atual</dt>
+                            <dd>{{ usuario.profile }}</dd>
+                        </div>
+                    </dl>
+                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+                        <button class="btn btn-outline-secondary" type="submit">Cancelar</button>
+                        <button class="btn btn-danger" type="submit" form="delete-user-form-{{ usuario.id }}" data-loading-text="Excluindo...">Confirmar exclusão</button>
+                    </div>
+                </form>
+                <form method="POST" action="{{ url_for('admin.excluir_usuario', user_id=usuario.id) }}" id="delete-user-form-{{ usuario.id }}" data-prevent-duplicate></form>
+            </dialog>
+            {% endif %}
         </div>
     </article>
     {% endfor %}
