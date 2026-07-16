@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% from 'components/macros.html' import page_header, field_hint %}
 
 {% block content %}
@@ -144,7 +144,7 @@
                 <div id="description_editor" class="rich-editor__surface" contenteditable="true" role="textbox" aria-multiline="true" aria-describedby="description_help" data-editor-surface>{% if incident and incident.description_plain_text %}{{ incident.description|safe }}{% elif incident %}{{ incident.description }}{% endif %}</div>
                 <textarea class="visually-hidden" name="description" id="description" required aria-required="true" data-editor-input>{{ incident.description if incident else '' }}</textarea>
             </div>
-            <p id="description_help" class="field-hint">Use a barra de ferramentas para formatar. Atalhos comuns como Ctrl+B, Ctrl+I e Ctrl+Z sÃ£o suportados pelo navegador.</p>
+            <p id="description_help" class="field-hint">Use a barra de ferramentas para formatar. Atalhos comuns como Ctrl+B, Ctrl+I e Ctrl+Z são suportados pelo navegador.</p>
 
             <div class="attachment-dropzone mt-4" data-attachment-dropzone>
                 <div>
@@ -178,7 +178,7 @@
     <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
         <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Cancelar</a>
         {% if edit_mode %}
-            <button type="submit" class="btn btn-primary" data-loading-text="Salvando..." onclick="return confirm('Tem certeza de que deseja salvar as alterações?')">Salvar alterações</button>
+            <button type="submit" class="btn btn-primary" data-loading-text="Salvando..." onclick="return confirm('Tem certeza de que deseja salvar as alterações')">Salvar alterações</button>
         {% else %}
             <button type="submit" class="btn btn-primary" data-loading-text="Registrando...">Registrar incidente</button>
         {% endif %}

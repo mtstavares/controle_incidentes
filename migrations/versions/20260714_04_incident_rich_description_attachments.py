@@ -16,8 +16,8 @@ depends_on = None
 
 
 TIPOS_INCIDENTE = [
-    "RequisiÃ§Ãµes automatizadas",
-    "TransferÃªncia de arquivo malicioso",
+    "Requisições automatizadas",
+    "Transferência de arquivo malicioso",
     "Bloqueio de acesso a VPN",
     "Phishing",
     "Comando e Controle",
@@ -25,7 +25,7 @@ TIPOS_INCIDENTE = [
     "Criptomining",
     "Malware",
     "Ativador KMS",
-    "Tentativa de intrusÃ£o",
+    "Tentativa de intrusão",
     "Comprometimento de Credenciais",
     "Quebra de Confidencialidade",
     "Brute Force",

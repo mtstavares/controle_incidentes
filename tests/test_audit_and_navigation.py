@@ -60,7 +60,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
             "btl": "BTL Teste",
             "cpa": "CPA Teste",
             "cia": "1 CIA",
-            "description": "<p>DescriÃ§Ã£o segura</p><script>alert('x')</script>",
+            "description": "<p>Descrição segura</p><script>alert('x')</script>",
         })
         return Incidente.query.order_by(Incidente.id.desc()).first()
 
@@ -119,7 +119,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
             "btl": "BTL Teste",
             "cpa": "CPA Teste",
             "cia": "1 CIA",
-            "description": "<p>DescriÃ§Ã£o segura</p><script>alert('x')</script>",
+            "description": "<p>Descrição segura</p><script>alert('x')</script>",
         })
         edit_log = AuditLog.query.filter_by(acao="EDITAR", entidade="Incidente", entidade_id=str(incident.id)).first()
         self.assertIsNotNone(edit_log)
@@ -173,11 +173,11 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         incident = self.create_incident()
         self.client.post(
             f"/incidente/{incident.id}/add_obs",
-            data={"texto_observacao": "EvidÃªncia 10.44.44.21 contato alvo@teste.local"},
+            data={"texto_observacao": "Evidência 10.44.44.21 contato alvo@teste.local"},
         )
         self.client.post(
             f"/incidente/{incident.id}/add_obs",
-            data={"texto_observacao": "Segunda evidÃªncia 10.44.44.21"},
+            data={"texto_observacao": "Segunda evidência 10.44.44.21"},
         )
 
         page_html = self.client.get("/incidentes?q=10.44.44.21").get_data(as_text=True)
@@ -407,7 +407,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         response = self.client.post(
             "/incidente/new",
             data={
-                "status_incidente": "Em AnÃ¡lise",
+                "status_incidente": "Em Análise",
                 "registration_date": "2026-07-14",
                 "incident_type": "Phishing",
                 "report_number": "123/150/26",
@@ -454,7 +454,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
     def test_incident_form_errors_keep_submitted_values_and_show_specific_message(self):
         self.login("user", "user123")
         response = self.client.post("/incidente/new", data={
-            "status_incidente": "Em AnÃ¡lise",
+            "status_incidente": "Em Análise",
             "registration_date": "2026-07-14",
             "incident_type": "Phishing",
             "report_number": "",
@@ -476,7 +476,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         invalid_attachment = self.client.post(
             "/incidente/new",
             data={
-                "status_incidente": "Em AnÃ¡lise",
+                "status_incidente": "Em Análise",
                 "registration_date": "2026-07-14",
                 "incident_type": "Phishing",
                 "report_number": "REL-PRESERVAR",
@@ -521,12 +521,12 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertIsNotNone(incident.created_at)
         self.assertIsNotNone(incident.updated_at)
         self.assertNotEqual(incident.created_at.year, 1999)
-        self.assertIn("Descrição", incident.description)
-        self.assertIn("Transferência", incident.description)
-        self.assertIn("Número do relatório", incident.report_number)
+        self.assertIn("Descri\u00e7\u00e3o", incident.description)
+        self.assertIn("Transfer\u00eancia", incident.description)
+        self.assertIn("N\u00famero do relat\u00f3rio", incident.report_number)
         self.assertIn("Quebra de Confidencialidade", incident.ticket_number)
         self.assertIn("Incidente envolvendo VPN corporativa", incident.cia)
-        corrupted = ("Descri?ão", "Transfer?ncia", "RelatÃƒÂ³rio", "Confidencialidadeï¿½")
+        corrupted = ("Descri" + "?" + "\u00e3o", "Transfer" + "?" + "ncia", "Relat" + chr(0x00C3), "Confidencialidade" + chr(0xFFFD))
         for value in [incident.description, incident.report_number, incident.ticket_number, incident.cia]:
             for bad in corrupted:
                 self.assertNotIn(bad, value)
@@ -657,7 +657,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
             self.assertIn(term.split("@")[0] if "@" in term else term, html)
         empty = self.client.get("/admin/usuarios?q=semresultado").get_data(as_text=True)
         self.assertIn("Nenhum usuário encontrado", empty)
-        self.assertIn("q=Pessoa", self.client.get("/admin/usuarios?q=Pessoa&page=1").request.path + "?q=Pessoa")
+        self.assertIn("q=Pessoa", self.client.get("/admin/usuarios?q=Pessoa&page=1").request.path + "q=Pessoa")
 
         target = User.query.filter_by(username="pesquisa1").first()
         self.assertEqual(self.client.get(f"/admin/usuarios/{target.id}/perfil").status_code, 405)

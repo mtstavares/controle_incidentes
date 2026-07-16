@@ -25,11 +25,11 @@ RENAMES = {
 }
 
 TEXT_REPAIRS = {
-    "Tentativa de intrusÃ£o": "Tentativa de intrusão",
-    "RequisiÃ§Ãµes automatizadas": "Requisições automatizadas",
-    "TransferÃªncia de arquivo malicioso": "Transferência de arquivo malicioso",
-    "Em AnÃ¡lise": "Em Análise",
-    "Em MitigaÃ§Ã£o": "Em Mitigação",
+    "Tentativa de intrusão": "Tentativa de intrusão",
+    "Requisições automatizadas": "Requisições automatizadas",
+    "Transferência de arquivo malicioso": "Transferência de arquivo malicioso",
+    "Em Análise": "Em Análise",
+    "Em Mitigação": "Em Mitigação",
 }
 
 

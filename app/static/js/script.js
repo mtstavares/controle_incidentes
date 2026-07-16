@@ -1,4 +1,4 @@
-﻿const NOTIFICATION_DURATION_MS = 3000;
+const NOTIFICATION_DURATION_MS = 3000;
 const NOTIFICATION_EXIT_DURATION_MS = 200;
 
 function dismissNotification(notification) {
@@ -53,8 +53,8 @@ function showApplicationNotification(message, type = 'info') {
     closeButton.type = 'button';
     closeButton.className = 'app-notification__close';
     closeButton.dataset.notificationClose = '';
-    closeButton.setAttribute('aria-label', 'Fechar notificaÃ§Ã£o');
-    closeButton.textContent = 'Ã—';
+    closeButton.setAttribute('aria-label', 'Fechar notifica??o');
+    closeButton.textContent = '?';
 
     notification.appendChild(content);
     notification.appendChild(closeButton);
@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             btlSelect.replaceChildren(buildPlaceholder(
                 commandId
-                    ? (availableUnits.length ? 'Selecione o Batalhão/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
+                    ? (availableUnits.length ? 'Selecione o Batalh?o/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
                     : 'Selecione primeiro o CPA/Grande Comando'
             ));
 
@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            return `/incidentes/pesquisa?${params.toString()}`;
+            return `/incidentes/pesquisa${params.toString()}`;
         };
 
         const updateBrowserUrl = function () {
@@ -402,7 +402,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateBrowserUrl();
             } catch (error) {
                 if (error.name !== 'AbortError') {
-                    showApplicationNotification('NÃ£o foi possÃ­vel pesquisar os incidentes.', 'danger');
+                    showApplicationNotification('N?o foi poss?vel pesquisar os incidentes.', 'danger');
                 }
             } finally {
                 incidentResults.setAttribute('aria-busy', 'false');
@@ -569,11 +569,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const lowerName = file.name.toLowerCase();
             const extension = allowedExtensions.find(function (ext) { return lowerName.endsWith(ext); });
             if (!extension) {
-                showApplicationNotification('Tipo de arquivo nÃ£o permitido.', 'danger');
+                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
                 return;
             }
             if (file.size > maxFileSize) {
-                showApplicationNotification('O arquivo excede o limite permitido.', 'danger');
+                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
                 return;
             }
             dataTransfer.items.add(file);

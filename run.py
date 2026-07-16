@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 from dotenv import load_dotenv
 
@@ -71,11 +71,11 @@ def bootstrap_local_database():
         seed_result = seed_development_organizational_units(commit=False)
         db.session.commit()
         print(
-            "Seed de unidades organizacionais concluÃ­da: "
-            f"{seed_result['created']} criadas, {seed_result['existing']} jÃ¡ existentes."
+            "Seed de unidades organizacionais concluída: "
+            f"{seed_result['created']} criadas, {seed_result['existing']} já existentes."
         )
         print("Banco de dados e tabelas criados com sucesso.")
-        print("Script de criação do banco de dados concluÃ­do.")
+        print("Script de criação do banco de dados concluído.")
 
 
 if not (len(sys.argv) > 1 and sys.argv[1] == "db"):
