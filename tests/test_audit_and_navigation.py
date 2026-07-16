@@ -14,6 +14,7 @@ class TestConfig:
     SECRET_KEY = "test-secret"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    RATELIMIT_ENABLED = False
 
 
 class DivCiberAuditNavigationTest(unittest.TestCase):
@@ -134,6 +135,36 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
 
         self.client.post(f"/incidente/delete/{incident.id}")
         self.assertIsNotNone(AuditLog.query.filter_by(acao="EXCLUIR", entidade="Incidente", entidade_id=str(incident.id)).first())
+
+    def test_user_cannot_edit_or_delete_other_users_incident(self):
+        admin = User.query.filter_by(username="admin").first()
+        incident = Incidente(
+            status_incident="Em Análise",
+            start_date=datetime(2026, 7, 14),
+            incident_type="Phishing",
+            report_number="REL-IDOR",
+            ticket_number="TCK-IDOR",
+            btl="BTL Teste",
+            cpa="CPA Teste",
+            cia="1 CIA",
+            description="<p>Incidente de outro usuário</p>",
+            description_plain_text="Incidente de outro usuário",
+            user_id=admin.id,
+        )
+        db.session.add(incident)
+        db.session.commit()
+
+        self.login("user", "user123")
+        self.assertEqual(self.client.get(f"/incidente/{incident.id}/edit").status_code, 403)
+        self.assertEqual(self.client.post(f"/incidente/delete/{incident.id}").status_code, 403)
+        self.assertIsNotNone(
+            AuditLog.query.filter_by(acao="ACESSO_NEGADO", entidade="Incidente", entidade_id=str(incident.id)).first()
+        )
+        self.assertIsNotNone(db.session.get(Incidente, incident.id))
+
+        self.client.get("/logout")
+        self.login("admin", "admin123")
+        self.assertEqual(self.client.get(f"/incidente/{incident.id}/edit").status_code, 200)
 
     def test_admin_audit_and_security_constraints(self):
         self.login("viewer", "viewer123")

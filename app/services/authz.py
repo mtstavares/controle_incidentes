@@ -8,7 +8,7 @@ def admin_required(func):
     @wraps(func)
     @login_required
     def wrapper(*args, **kwargs):
-        if not getattr(current_user, "is_active", True) or current_user.profile != "Admin":
+        if not getattr(current_user, "is_active", False) or current_user.profile != "Admin":
             registrar_auditoria(
                 acao=AuditAction.ACESSO_NEGADO,
                 modulo="Administração",

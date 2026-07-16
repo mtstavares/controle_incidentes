@@ -1,8 +1,10 @@
 blinker==1.9.0
+bleach==6.2.0
 click==8.2.1
 colorama==0.4.6
 dotenv==0.9.9
 Flask==3.1.1
+Flask-Limiter==3.12
 Flask-Login==0.6.3
 Flask-Migrate==4.1.0
 Flask-SQLAlchemy==3.1.1
@@ -18,9 +20,11 @@ pandas==2.3.3
 plotly==6.5.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
+python-magic==0.4.27
 pytz==2025.2
 six==1.17.0
 SQLAlchemy==2.0.42
+tinycss2==1.4.0
 typing_extensions==4.14.1
 tzdata==2025.3
 Werkzeug==3.1.3

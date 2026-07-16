@@ -1,7 +1,7 @@
 from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user
 from sqlalchemy.exc import IntegrityError
-from app import db, lm
+from app import db, limiter, lm
 from app.blueprints.users import users_bp
 from app.models import User
 from app.services.audit_service import AuditAction, registrar_auditoria
@@ -94,6 +94,7 @@ def register():
 
 
 @users_bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute")
 def login():
     if request.method == "GET":
         return render_template("users/login.html", title="Login de usuário")
