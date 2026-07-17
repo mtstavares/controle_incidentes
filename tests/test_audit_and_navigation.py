@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 from app import create_app, db, hash
 from app.models import AuditLog, Incidente, IncidenteObs, IncidentAttachment, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.organizational_import_service import parse_organizational_structure_text, rebuild_organizational_structure_from_groups
+from app.services.timezone_service import APP_TIMEZONE, format_local_datetime, to_local
 
 
 class TestConfig:
@@ -15,6 +17,8 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     RATELIMIT_ENABLED = False
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
+    SESSION_REFRESH_EACH_REQUEST = False
 
 
 class DivCiberAuditNavigationTest(unittest.TestCase):
@@ -106,6 +110,14 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         password_log = AuditLog.query.filter_by(acao="ALTERAR_SENHA").first()
         self.assertIsNotNone(password_log)
         self.assertNotIn("Senha@123", str(password_log.alteracoes))
+
+    def test_login_session_cookie_expires_after_five_hours(self):
+        response = self.client.post("/login", data={"username": "admin", "password": "admin123"})
+        cookie_headers = response.headers.getlist("Set-Cookie")
+        session_cookie = next(header for header in cookie_headers if header.startswith("session="))
+        self.assertIn("Expires=", session_cookie)
+        self.assertEqual(int(self.app.permanent_session_lifetime.total_seconds()), 18000)
+        self.assertFalse(self.app.config["SESSION_REFRESH_EACH_REQUEST"])
 
     def test_incident_and_observation_audit(self):
         incident = self.create_incident()
@@ -428,23 +440,103 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         first = seed_development_organizational_units()
         second = seed_development_organizational_units()
 
-        self.assertEqual(first["created"], 12)
+        self.assertEqual(first["created"], 39)
         self.assertEqual(second["created"], 0)
-        self.assertGreaterEqual(second["existing"], 12)
+        self.assertGreaterEqual(second["existing"], 39)
 
         cpa_m5 = Unidades.query.filter_by(cpa="CPA/M-5").all()
         cpa_m1 = Unidades.query.filter_by(cpa="CPA/M-1").all()
+        diretorias = Unidades.query.filter_by(cpa="DIRETORIAS").all()
 
         self.assertEqual({unidade.btl for unidade in cpa_m5}, {"SEDE", "4º BPM/M", "16º BPM/M", "23º BPM/M", "49º BPM/M"})
         self.assertEqual({unidade.btl for unidade in cpa_m1}, {"SEDE", "7º BPM/M", "11º BPM/M", "13º BPM/M", "7º BAEP"})
+        self.assertIn("DTIC - DAS", {unidade.btl for unidade in diretorias})
+        self.assertIn("APMSSP", {unidade.btl for unidade in diretorias})
         self.assertEqual(Unidades.query.filter_by(cpa="CPA/M-5", btl="4º BPM/M").count(), 1)
 
         command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
         command_m1 = OrganizationalCommand.query.filter_by(name="CPA/M-1").first()
+        command_diretorias = OrganizationalCommand.query.filter_by(name="DIRETORIAS").first()
         self.assertIsNotNone(command_m5)
         self.assertIsNotNone(command_m1)
+        self.assertIsNotNone(command_diretorias)
+        self.assertLess(command_diretorias.sort_order, command_m1.sort_order)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="SEDE").count(), 1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="SEDE").count(), 1)
+        self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_diretorias.id, name="DTIC - DAS").count(), 1)
+
+    def test_rebuild_organizational_structure_from_txt_cleans_imports_and_validates(self):
+        source = """CPA/M-5 - SEDE
+├── SEDE
+├── 4º BPM/M
+└── 23º BPM/M
+
+CPA/M-1
+├── SEDE
+├── 7º BPM/M
+└── 7º BAEP
+"""
+        groups, invalid_lines = parse_organizational_structure_text(source)
+        self.assertEqual(invalid_lines, [])
+
+        old_command = OrganizationalCommand.query.filter_by(name="CPA Teste").first()
+        old_unit = OrganizationalUnit.query.filter_by(command_id=old_command.id).first()
+        incident = Incidente(
+            status_incident="Em Análise",
+            start_date=datetime(2026, 7, 16, 10, 0, 0),
+            incident_type="Phishing",
+            report_number="REL-ORG",
+            cpa=old_command.name,
+            btl=old_unit.name,
+            cia="1 CIA",
+            description="Histórico preservado",
+            description_plain_text="Histórico preservado",
+            user_id=User.query.filter_by(username="user").first().id,
+            command_id=old_command.id,
+            unit_id=old_unit.id,
+        )
+        db.session.add(incident)
+        db.session.commit()
+
+        result = rebuild_organizational_structure_from_groups(groups)
+        self.assertTrue(result.success, result.as_dict())
+        self.assertEqual(result.imported_commands, 2)
+        self.assertEqual(result.imported_units, 6)
+        self.assertEqual(OrganizationalCommand.query.count(), 2)
+        self.assertEqual(OrganizationalUnit.query.count(), 6)
+        self.assertEqual(Unidades.query.count(), 6)
+        self.assertIsNone(Incidente.query.filter_by(report_number="REL-ORG").first().command_id)
+        self.assertIsNone(Incidente.query.filter_by(report_number="REL-ORG").first().unit_id)
+
+        command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
+        self.assertIsNotNone(command_m5)
+        units_m5 = [
+            unit.name
+            for unit in OrganizationalUnit.query.filter_by(command_id=command_m5.id)
+            .order_by(OrganizationalUnit.sort_order.asc(), OrganizationalUnit.id.asc())
+            .all()
+        ]
+        self.assertEqual(units_m5, ["SEDE", "4º BPM/M", "23º BPM/M"])
+        self.assertIsNone(OrganizationalCommand.query.filter_by(name="CPA/M-5 - SEDE").first())
+
+        self.login("user", "user123")
+        response = self.client.get(f"/api/organizational-commands/{command_m5.id}/units")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([unit["name"] for unit in response.get_json()["units"]], units_m5)
+
+    def test_rebuild_organizational_structure_rolls_back_on_validation_error(self):
+        original_commands = OrganizationalCommand.query.count()
+        original_units = OrganizationalUnit.query.count()
+        source = """CPA/M-9
+├── SEDE
+├── SEDE
+"""
+        groups, invalid_lines = parse_organizational_structure_text(source)
+        result = rebuild_organizational_structure_from_groups(groups, invalid_lines=invalid_lines)
+        self.assertFalse(result.success)
+        self.assertTrue(result.rolled_back)
+        self.assertEqual(OrganizationalCommand.query.count(), original_commands)
+        self.assertEqual(OrganizationalUnit.query.count(), original_units)
 
     def test_incident_form_uses_dependent_command_units_and_backend_rejects_mismatch(self):
         seed_development_organizational_units()
@@ -456,7 +548,8 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
 
         form_html = self.client.get("/incidente/new").get_data(as_text=True)
         self.assertIn("command_select", form_html)
-        self.assertIn("Selecione primeiro o CPA/Grande Comando", form_html)
+        self.assertIn("Selecione o CPA/Grande Comando", form_html)
+        self.assertLess(form_html.index("DIRETORIAS"), form_html.index("CPA/M-1"))
         self.assertIn("CPA/M-5", form_html)
         self.assertNotIn("CPA/M-5 - SEDE", form_html)
 
@@ -603,6 +696,54 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         audit = AuditLog.query.filter_by(acao="CRIAR", entidade="Incidente", entidade_id=str(late.id)).first()
         self.assertIn("17:45:33", audit.descricao)
         self.assertEqual(audit.alteracoes["start_date"]["novo"], "2026-07-16 17:45:33")
+
+    def test_incident_registration_uses_sao_paulo_time_without_fixed_offset(self):
+        self.login("user", "user123")
+        utc_reference = datetime(2026, 7, 16, 17, 37, 51, tzinfo=timezone.utc)
+        with patch("app.services.timezone_service.utc_now", return_value=utc_reference):
+            response = self.client.post("/incidente/new", data={
+                "status_incidente": "Em Análise",
+                "registration_date": "2026-07-16",
+                "incident_type": "Phishing",
+                "report_number": "REL-TZ",
+                "message_number": "MSG-TZ",
+                "ticket_number": "INC-TZ",
+                "btl": "BTL Teste",
+                "cpa": "CPA Teste",
+                "cia": "1 CIA",
+                "description": "<p>Teste de fuso horário</p>",
+            }, follow_redirects=True)
+
+        self.assertIn("Incidente registrado com sucesso", response.get_data(as_text=True))
+        incident = Incidente.query.filter_by(report_number="REL-TZ").first()
+        self.assertEqual(incident.start_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 14:37:51")
+
+    def test_audit_and_timezone_helpers_render_sao_paulo_without_double_conversion(self):
+        aware_utc = datetime(2026, 7, 16, 17, 37, 51, tzinfo=timezone.utc)
+        aware_local = aware_utc.astimezone(APP_TIMEZONE)
+        self.assertEqual(format_local_datetime(aware_utc), "16/07/2026 14:37:51")
+        self.assertEqual(to_local(aware_local).strftime("%d/%m/%Y %H:%M:%S"), "16/07/2026 14:37:51")
+
+        with patch("app.services.audit_service.utc_now", return_value=aware_utc):
+            self.login("user", "user123")
+        login_log = AuditLog.query.filter_by(acao="LOGIN").first()
+        self.assertEqual(self.app.jinja_env.filters["sp_datetime"](login_log.timestamp), "16/07/2026 14:37:51")
+
+    def test_observation_uses_local_operational_timestamp(self):
+        incident = self.create_incident()
+        with patch(
+            "app.blueprints.incidente.routes.local_naive_now",
+            return_value=datetime(2026, 7, 16, 14, 37, 51),
+        ):
+            self.client.post(
+                f"/incidente/{incident.id}/add_obs",
+                data={"texto_observacao": "Observação com horário local"},
+            )
+
+        obs = IncidenteObs.query.filter_by(texto_observacao="Observação com horário local").first()
+        self.assertEqual(obs.data_observacao.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-16 14:37:51")
+        html = self.client.get(f"/incidente/{incident.id}").get_data(as_text=True)
+        self.assertIn("16/07/2026 14:37", html)
 
     def test_incident_form_errors_keep_submitted_values_and_show_specific_message(self):
         self.login("user", "user123")

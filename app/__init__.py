@@ -1,7 +1,5 @@
 # app/__init__.py
 
-from datetime import timezone
-from zoneinfo import ZoneInfo
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -38,6 +36,7 @@ def create_app(config_class=ProductionConfig):
     app.config.setdefault("JSON_AS_ASCII", False)
     app.config.setdefault("JSONIFY_MIMETYPE", "application/json; charset=utf-8")
     app.config.setdefault("TIMEZONE", "America/Sao_Paulo")
+    os.environ.setdefault("TIMEZONE", app.config["TIMEZONE"])
     if hasattr(app, "json"):
         app.json.ensure_ascii = False
     
@@ -126,12 +125,9 @@ def create_app(config_class=ProductionConfig):
 
     @app.template_filter("sp_datetime")
     def sp_datetime(value):
-        if not value:
-            return ""
-        source = value
-        if source.tzinfo is None:
-            source = source.replace(tzinfo=timezone.utc)
-        return source.astimezone(ZoneInfo(app.config["TIMEZONE"])).strftime("%d/%m/%Y %H:%M:%S")
+        from app.services.timezone_service import format_local_datetime
+
+        return format_local_datetime(value)
     
     # ====================================================================
     # CONFIGURAÇÃO DO LOGGING

@@ -1,6 +1,37 @@
 {
   "organizationalUnits": [
     {
+      "cpa": "DIRETORIAS",
+      "battalions": [
+        "DEC",
+        "DEC - CAES",
+        "DEC - APMBB",
+        "DEC - EEF",
+        "DEC - ESSgt",
+        "DEC - ESSd",
+        "DEC - CMus",
+        "DF - CIAF",
+        "DF - CIAP",
+        "DL - CMB",
+        "DL - CMM",
+        "DPCDH",
+        "DS - Cmed",
+        "DS - Codont",
+        "DS - CRPM",
+        "DTIC - DPC",
+        "DTIC - DAS",
+        "DTIC - DCI",
+        "COPOM",
+        "CIPM",
+        "EM/PM",
+        "Correg PM",
+        "CComSoc",
+        "DSA/CG",
+        "ASSESSORIAS",
+        "APMSSP"
+      ]
+    },
+    {
       "cpa": "CPA/M-5",
       "battalions": [
         "SEDE",

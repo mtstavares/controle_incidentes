@@ -1,7 +1,6 @@
 import hashlib
 import os
 import zipfile
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -10,6 +9,7 @@ from flask import current_app
 from werkzeug.utils import secure_filename
 
 from app.models import IncidentAttachment
+from app.services.timezone_service import utc_now
 
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx", ".xls", ".xlsx"}
@@ -195,7 +195,7 @@ def save_incident_attachments(files, incident, user):
                 file_size=size,
                 sha256=_sha256(destination),
                 uploaded_by_id=user.id,
-                uploaded_at=datetime.now(timezone.utc),
+                uploaded_at=utc_now(),
             )
             uploaded.append(attachment)
         return uploaded

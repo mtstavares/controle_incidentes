@@ -84,13 +84,13 @@
                 <div class="span-4">
                     <label for="btl_select" class="form-label">Batalhão/Unidade <span class="required-mark" aria-hidden="true">*</span></label>
                     <select class="form-select" name="unit_id" id="btl_select" required aria-required="true" data-unit-select {% if not incident or not incident.command_id %}disabled{% endif %}>
-                        <option value="">Selecione primeiro o CPA/Grande Comando</option>
+                        <option value="">Selecione o CPA/Grande Comando</option>
                         {% for unit in organizational_units %}
                             <option value="{{ unit.id }}" data-cpa="{{ unit.command_id }}" data-unit-name="{{ unit.name }}" {% if incident and incident.unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>
                         {% endfor %}
                     </select>
                     <input type="hidden" name="btl" id="btl_input" value="{{ incident.btl if incident else '' }}">
-                    <p class="field-hint" data-unit-help>Selecione primeiro o CPA/Grande Comando.</p>
+                    <p class="field-hint" data-unit-help>Selecione o CPA/Grande Comando.</p>
                 </div>
                 <div class="span-4">
                     <label for="cia" class="form-label">Companhia</label>
