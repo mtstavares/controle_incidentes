@@ -430,23 +430,29 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         first = seed_development_organizational_units()
         second = seed_development_organizational_units()
 
-        self.assertEqual(first["created"], 12)
+        self.assertEqual(first["created"], 39)
         self.assertEqual(second["created"], 0)
-        self.assertGreaterEqual(second["existing"], 12)
+        self.assertGreaterEqual(second["existing"], 39)
 
         cpa_m5 = Unidades.query.filter_by(cpa="CPA/M-5").all()
         cpa_m1 = Unidades.query.filter_by(cpa="CPA/M-1").all()
+        diretorias = Unidades.query.filter_by(cpa="DIRETORIAS").all()
 
         self.assertEqual({unidade.btl for unidade in cpa_m5}, {"SEDE", "4º BPM/M", "16º BPM/M", "23º BPM/M", "49º BPM/M"})
         self.assertEqual({unidade.btl for unidade in cpa_m1}, {"SEDE", "7º BPM/M", "11º BPM/M", "13º BPM/M", "7º BAEP"})
+        self.assertIn("DTIC - DAS", {unidade.btl for unidade in diretorias})
+        self.assertIn("APMSSP", {unidade.btl for unidade in diretorias})
         self.assertEqual(Unidades.query.filter_by(cpa="CPA/M-5", btl="4º BPM/M").count(), 1)
 
         command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
         command_m1 = OrganizationalCommand.query.filter_by(name="CPA/M-1").first()
+        command_diretorias = OrganizationalCommand.query.filter_by(name="DIRETORIAS").first()
         self.assertIsNotNone(command_m5)
         self.assertIsNotNone(command_m1)
+        self.assertIsNotNone(command_diretorias)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="SEDE").count(), 1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="SEDE").count(), 1)
+        self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_diretorias.id, name="DTIC - DAS").count(), 1)
 
     def test_rebuild_organizational_structure_from_txt_cleans_imports_and_validates(self):
         source = """CPA/M-5 - SEDE

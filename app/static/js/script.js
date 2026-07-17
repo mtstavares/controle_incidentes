@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             btlSelect.replaceChildren(buildPlaceholder(
                 commandId
-                    ? (availableUnits.length ? 'Selecione o Batalh?o/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
+                    ? (availableUnits.length ? 'Selecione o Batalhão/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
                     : 'Selecione primeiro o CPA/Grande Comando'
             ));
 
