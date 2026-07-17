@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app import create_app, db, hash
 from app.models import AuditLog, Incidente, IncidenteObs, IncidentAttachment, OrganizationalCommand, OrganizationalUnit, StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.organizational_import_service import parse_organizational_structure_text, rebuild_organizational_structure_from_groups
 from app.services.timezone_service import APP_TIMEZONE, format_local_datetime, to_local
 
 
@@ -446,6 +447,79 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertIsNotNone(command_m1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="SEDE").count(), 1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="SEDE").count(), 1)
+
+    def test_rebuild_organizational_structure_from_txt_cleans_imports_and_validates(self):
+        source = """CPA/M-5 - SEDE
+├── SEDE
+├── 4º BPM/M
+└── 23º BPM/M
+
+CPA/M-1
+├── SEDE
+├── 7º BPM/M
+└── 7º BAEP
+"""
+        groups, invalid_lines = parse_organizational_structure_text(source)
+        self.assertEqual(invalid_lines, [])
+
+        old_command = OrganizationalCommand.query.filter_by(name="CPA Teste").first()
+        old_unit = OrganizationalUnit.query.filter_by(command_id=old_command.id).first()
+        incident = Incidente(
+            status_incident="Em Análise",
+            start_date=datetime(2026, 7, 16, 10, 0, 0),
+            incident_type="Phishing",
+            report_number="REL-ORG",
+            cpa=old_command.name,
+            btl=old_unit.name,
+            cia="1 CIA",
+            description="Histórico preservado",
+            description_plain_text="Histórico preservado",
+            user_id=User.query.filter_by(username="user").first().id,
+            command_id=old_command.id,
+            unit_id=old_unit.id,
+        )
+        db.session.add(incident)
+        db.session.commit()
+
+        result = rebuild_organizational_structure_from_groups(groups)
+        self.assertTrue(result.success, result.as_dict())
+        self.assertEqual(result.imported_commands, 2)
+        self.assertEqual(result.imported_units, 6)
+        self.assertEqual(OrganizationalCommand.query.count(), 2)
+        self.assertEqual(OrganizationalUnit.query.count(), 6)
+        self.assertEqual(Unidades.query.count(), 6)
+        self.assertIsNone(Incidente.query.filter_by(report_number="REL-ORG").first().command_id)
+        self.assertIsNone(Incidente.query.filter_by(report_number="REL-ORG").first().unit_id)
+
+        command_m5 = OrganizationalCommand.query.filter_by(name="CPA/M-5").first()
+        self.assertIsNotNone(command_m5)
+        units_m5 = [
+            unit.name
+            for unit in OrganizationalUnit.query.filter_by(command_id=command_m5.id)
+            .order_by(OrganizationalUnit.sort_order.asc(), OrganizationalUnit.id.asc())
+            .all()
+        ]
+        self.assertEqual(units_m5, ["SEDE", "4º BPM/M", "23º BPM/M"])
+        self.assertIsNone(OrganizationalCommand.query.filter_by(name="CPA/M-5 - SEDE").first())
+
+        self.login("user", "user123")
+        response = self.client.get(f"/api/organizational-commands/{command_m5.id}/units")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([unit["name"] for unit in response.get_json()["units"]], units_m5)
+
+    def test_rebuild_organizational_structure_rolls_back_on_validation_error(self):
+        original_commands = OrganizationalCommand.query.count()
+        original_units = OrganizationalUnit.query.count()
+        source = """CPA/M-9
+├── SEDE
+├── SEDE
+"""
+        groups, invalid_lines = parse_organizational_structure_text(source)
+        result = rebuild_organizational_structure_from_groups(groups, invalid_lines=invalid_lines)
+        self.assertFalse(result.success)
+        self.assertTrue(result.rolled_back)
+        self.assertEqual(OrganizationalCommand.query.count(), original_commands)
+        self.assertEqual(OrganizationalUnit.query.count(), original_units)
 
     def test_incident_form_uses_dependent_command_units_and_backend_rejects_mismatch(self):
         seed_development_organizational_units()
