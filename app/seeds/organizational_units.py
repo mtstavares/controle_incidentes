@@ -40,7 +40,7 @@ def seed_development_organizational_units(*, commit=True):
         if command:
             existing += 1
             command.active = True
-            command.sort_order = command.sort_order or command_index
+            command.sort_order = command_index
         else:
             command = OrganizationalCommand(name=cpa, active=True, sort_order=command_index)
             db.session.add(command)

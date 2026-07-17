@@ -17,6 +17,8 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     RATELIMIT_ENABLED = False
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
+    SESSION_REFRESH_EACH_REQUEST = False
 
 
 class DivCiberAuditNavigationTest(unittest.TestCase):
@@ -108,6 +110,14 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         password_log = AuditLog.query.filter_by(acao="ALTERAR_SENHA").first()
         self.assertIsNotNone(password_log)
         self.assertNotIn("Senha@123", str(password_log.alteracoes))
+
+    def test_login_session_cookie_expires_after_five_hours(self):
+        response = self.client.post("/login", data={"username": "admin", "password": "admin123"})
+        cookie_headers = response.headers.getlist("Set-Cookie")
+        session_cookie = next(header for header in cookie_headers if header.startswith("session="))
+        self.assertIn("Expires=", session_cookie)
+        self.assertEqual(int(self.app.permanent_session_lifetime.total_seconds()), 18000)
+        self.assertFalse(self.app.config["SESSION_REFRESH_EACH_REQUEST"])
 
     def test_incident_and_observation_audit(self):
         incident = self.create_incident()
@@ -450,6 +460,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertIsNotNone(command_m5)
         self.assertIsNotNone(command_m1)
         self.assertIsNotNone(command_diretorias)
+        self.assertLess(command_diretorias.sort_order, command_m1.sort_order)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m5.id, name="SEDE").count(), 1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_m1.id, name="SEDE").count(), 1)
         self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command_diretorias.id, name="DTIC - DAS").count(), 1)
@@ -537,7 +548,8 @@ CPA/M-1
 
         form_html = self.client.get("/incidente/new").get_data(as_text=True)
         self.assertIn("command_select", form_html)
-        self.assertIn("Selecione primeiro o CPA/Grande Comando", form_html)
+        self.assertIn("Selecione o CPA/Grande Comando", form_html)
+        self.assertLess(form_html.index("DIRETORIAS"), form_html.index("CPA/M-1"))
         self.assertIn("CPA/M-5", form_html)
         self.assertNotIn("CPA/M-5 - SEDE", form_html)
 

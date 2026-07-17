@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function () {
             btlSelect.replaceChildren(buildPlaceholder(
                 commandId
                     ? (availableUnits.length ? 'Selecione o Batalhão/Unidade' : 'Nenhuma unidade cadastrada para este CPA')
-                    : 'Selecione primeiro o CPA/Grande Comando'
+                    : 'Selecione o CPA/Grande Comando'
             ));
 
             availableUnits.forEach(function (unit) {
@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (unitHelp) {
                 unitHelp.textContent = commandId
                     ? (availableUnits.length ? 'Selecione uma unidade vinculada ao CPA informado.' : 'Nenhuma unidade cadastrada para este CPA.')
-                    : 'Selecione primeiro o CPA/Grande Comando.';
+                    : 'Selecione o CPA/Grande Comando.';
             }
         };
 

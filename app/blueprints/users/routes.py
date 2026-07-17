@@ -1,4 +1,4 @@
-from flask import current_app, flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user
 from sqlalchemy.exc import IntegrityError
 from app import db, limiter, lm
@@ -115,6 +115,7 @@ def login():
         flash("Nome de usuário ou senha incorretos.", "danger")
         return redirect(url_for("users.login"))
 
+    session.permanent = True
     login_user(user)
     registrar_auditoria(
         acao=AuditAction.LOGIN,

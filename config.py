@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -32,6 +33,8 @@ class Config:
     MAX_INCIDENT_ATTACHMENTS_SIZE = 50 * 1024 * 1024
     MAX_ATTACHMENTS_PER_INCIDENT = 10
     INCIDENT_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "incidents")
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
+    SESSION_REFRESH_EACH_REQUEST = False
 
 
 class DevelopmentConfig(Config):
