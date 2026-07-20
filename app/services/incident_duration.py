@@ -115,3 +115,13 @@ def duration_for_incident(incident: Any, *, today: date | None = None) -> Incide
         created_at=getattr(incident, "created_at", None),
         today=today,
     )
+
+
+def age_for_incident(incident: Any, *, today: date | None = None) -> IncidentDuration:
+    return calculate_incident_duration(
+        start_date=getattr(incident, "start_date", None),
+        end_date=None,
+        status=getattr(incident, "status_incident", None),
+        created_at=getattr(incident, "created_at", None),
+        today=today,
+    )

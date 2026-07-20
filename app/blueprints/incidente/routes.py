@@ -21,7 +21,7 @@ from app.services.attachment_service import (
     save_incident_attachments,
 )
 from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
-from app.services.incident_duration import duration_for_incident
+from app.services.incident_duration import age_for_incident
 from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_current_time, local_naive_now, local_now
 
 MAX_SEARCH_LENGTH = 200
@@ -374,7 +374,7 @@ def _is_inline_attachment(attachment):
 def _format_incident_durations(incidentes):
     incidentes_com_tempo = []
     for inc in incidentes:
-        duration = duration_for_incident(inc)
+        duration = age_for_incident(inc)
         inc.tempo_aberto_formatado = duration.label
         inc.tempo_aberto_dias = duration.days
         inc.tempo_aberto_status = duration.status

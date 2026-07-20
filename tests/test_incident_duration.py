@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from app.services.incident_duration import calculate_incident_duration, duration_for_incident, is_final_status
+from app.services.incident_duration import age_for_incident, calculate_incident_duration, duration_for_incident, is_final_status
 
 
 class IncidentDurationTest(unittest.TestCase):
@@ -93,6 +93,16 @@ class IncidentDurationTest(unittest.TestCase):
             created_at=datetime(2026, 7, 11),
         )
         self.assertEqual(duration_for_incident(incident, today=date(2026, 7, 20)).days, 10)
+
+    def test_listing_age_ignores_end_date_and_counts_from_opening_to_today(self):
+        incident = SimpleNamespace(
+            start_date=datetime(2026, 6, 15, 14, 34),
+            end_date=datetime(2026, 6, 17, 23, 34, 50),
+            status_incident="Encerrado",
+            created_at=datetime(2026, 6, 15, 14, 34),
+        )
+        self.assertEqual(duration_for_incident(incident, today=date(2026, 7, 20)).label, "2 dias")
+        self.assertEqual(age_for_incident(incident, today=date(2026, 7, 20)).label, "35 dias")
 
     def test_final_status_normalization(self):
         self.assertTrue(is_final_status(" encerrado "))
