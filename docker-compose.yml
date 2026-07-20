@@ -1,0 +1,31 @@
+services:
+  divciber:
+    build:
+      context: .
+    image: divciber:local
+    container_name: divciber
+    restart: unless-stopped
+    ports:
+      - "${DIVCIBER_PORT:-5005}:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-sqlite:////app/instance/divciber.db}"
+      TIMEZONE: "${TIMEZONE:-America/Sao_Paulo}"
+    volumes:
+      - ../divciber-data/instance:/app/instance
+      - ../divciber-data/logs:/app/logs
+    command: >
+      gunicorn --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-1} run:app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/login', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
