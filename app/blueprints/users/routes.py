@@ -129,7 +129,7 @@ def login():
         return redirect(url_for("users.change_password"))
 
     current_app.logger.info("%s logou no sistema.", user.username)
-    return redirect(url_for("incidente.dashboard_incidentes"))
+    return redirect(url_for("main.home"))
 
 
 @users_bp.route("/change_password", methods=["GET", "POST"])
