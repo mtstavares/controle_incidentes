@@ -26,6 +26,7 @@ backup/
 *.db-*
 *.db.bak
 *.db.backup
+migration_report*.json
 
 # Dados de runtime
 instance/

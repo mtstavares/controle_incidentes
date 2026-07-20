@@ -21,6 +21,7 @@ from app.services.attachment_service import (
     save_incident_attachments,
 )
 from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
+from app.services.incident_duration import duration_for_incident
 from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_current_time, local_naive_now, local_now
 
 MAX_SEARCH_LENGTH = 200
@@ -371,18 +372,12 @@ def _is_inline_attachment(attachment):
 
 
 def _format_incident_durations(incidentes):
-    now = local_naive_now()
     incidentes_com_tempo = []
     for inc in incidentes:
-        start_date_aware = inc.start_date.replace()
-
-        if inc.end_date:
-            end_date_aware = inc.end_date.replace()
-            duracao = end_date_aware - start_date_aware
-        else:
-            duracao = now - start_date_aware
-
-        inc.tempo_aberto_formatado = format_timedelta(duracao)
+        duration = duration_for_incident(inc)
+        inc.tempo_aberto_formatado = duration.label
+        inc.tempo_aberto_dias = duration.days
+        inc.tempo_aberto_status = duration.status
         incidentes_com_tempo.append(inc)
     return incidentes_com_tempo
 
@@ -435,7 +430,9 @@ def format_timedelta(td):
     if not td:
         return "N/A"
 
-    dias_somente = max(0, int(td.total_seconds()) // 86400)
+    dias_somente = int(td.total_seconds()) // 86400
+    if dias_somente < 0:
+        return "Data inconsistente"
     return f"{dias_somente} dia" if dias_somente == 1 else f"{dias_somente} dias"
 
     total_segundos = int(td.total_seconds())
