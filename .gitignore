@@ -1,26 +1,53 @@
-# Ignorar arquivos de log
-*.log
-*.copy
-
-# Ignorar arquivos temporários
-*.tmp
-*.swp
-
-# Ignorar pastas específicas
+# Python/runtime
 __pycache__/
+*.pyc
 .venv/
 
-.flaskenv
-.vscode/
-instance/
-# Ignorar arquivos de configuração locais
+# Arquivos temporários
+*.tmp
+*.swp
+*.copy
 
-.env
-*.sqlite3
+# Bancos de dados
 *.db
+*.sqlite
+*.sqlite3
+instance/*.db
+instance/**/*.db
+data/*.db
+data/**/*.db
 
-# Ignorar arquivos 
+# Backups
+*.bak
+*.backup
+*.dump
+backups/
+backup/
+*.db-*
+*.db.bak
+*.db.backup
+
+# Dados de runtime
+instance/
+uploads/
+static/uploads/
+logs/
+*.log
+
+# Segredos e variáveis de ambiente
+.env
+.env.*
+!.env.example
+.flaskenv
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+secrets/
+
+# IDE e artefatos locais
+.vscode/
 *.xlsx
 *.csv
-*.pyc
 *.png
