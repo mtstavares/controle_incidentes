@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Biblioteca', 'Gerencie os dados configuráveis usados no registro, filtros e dashboards de incidentes.') }}
+
+<section class="app-card mb-4" aria-labelledby="library-search-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="library-search-title" class="h5 mb-1">Dados da Biblioteca</h2>
+            <p class="text-muted mb-0">Pesquise status, tipos de incidente, CPA/Grande Comando e Batalhão/Unidade.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('admin.biblioteca') }}" role="search">
+            <label class="form-label" for="q">Pesquisar registros</label>
+            <div class="input-group">
+                <input class="form-control" id="q" name="q" value="{{ q }}" type="search" placeholder="Nome do registro ou CPA vinculado">
+                <button class="btn btn-outline-secondary" type="submit">Pesquisar</button>
+                {% if q %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('admin.biblioteca') }}">Limpar</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</section>
+
+<div class="dashboard-tabs mb-4" role="tablist" aria-label="Seções da Biblioteca">
+    <a class="btn btn-outline-secondary" href="#status">Status</a>
+    <a class="btn btn-outline-secondary" href="#tipos">Tipos de incidente</a>
+    <a class="btn btn-outline-secondary" href="#cpas">CPA/Grande Comando</a>
+    <a class="btn btn-outline-secondary" href="#unidades">Batalhão/Unidade</a>
+</div>
+
+<section class="app-card mb-4" id="status" aria-labelledby="status-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="status-title" class="h5 mb-1">Status do incidente</h2>
+            <p class="text-muted mb-0">Status disponíveis nos formulários, filtros e dashboards.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form class="row g-3 align-items-end mb-4" method="POST" action="{{ url_for('admin.biblioteca_status_criar') }}" data-prevent-duplicate>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="status_name">Novo status</label>
+                <input class="form-control" id="status_name" name="name" maxlength="100" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <button class="btn btn-primary w-100" type="submit">Criar status</button>
+            </div>
+        </form>
+
+        {% if statuses %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Incidentes</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in statuses %}
+                    <tr>
+                        <td>
+                            <form class="d-flex flex-column flex-md-row gap-2" method="POST" action="{{ url_for('admin.biblioteca_status_editar', status_id=item.id) }}" data-prevent-duplicate>
+                                <label class="visually-hidden" for="status_{{ item.id }}">Nome do status</label>
+                                <input class="form-control" id="status_{{ item.id }}" name="name" value="{{ item.status }}" maxlength="100" required>
+                                <button class="btn btn-outline-secondary" type="submit">Salvar</button>
+                            </form>
+                        </td>
+                        <td>{{ status_counts[item.id] }}</td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('admin.biblioteca_status_excluir', status_id=item.id) }}" data-prevent-duplicate>
+                                <button class="btn btn-danger" type="submit" {% if status_counts[item.id] %}disabled title="Registro vinculado a incidentes"{% endif %} onclick="return confirm('Confirma a exclusão deste status?')">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            {{ empty_state('Nenhum status encontrado.', 'Crie um status para disponibilizá-lo nos formulários de incidente.') }}
+        {% endif %}
+    </div>
+</section>
+
+<section class="app-card mb-4" id="tipos" aria-labelledby="types-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="types-title" class="h5 mb-1">Tipos de incidente</h2>
+            <p class="text-muted mb-0">Tipos usados no registro, pesquisa, filtros e relatórios.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form class="row g-3 align-items-end mb-4" method="POST" action="{{ url_for('admin.biblioteca_tipo_criar') }}" data-prevent-duplicate>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="type_name">Novo tipo de incidente</label>
+                <input class="form-control" id="type_name" name="name" maxlength="100" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <button class="btn btn-primary w-100" type="submit">Criar tipo</button>
+            </div>
+        </form>
+
+        {% if incident_types %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Incidentes</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in incident_types %}
+                    <tr>
+                        <td>
+                            <form class="d-flex flex-column flex-md-row gap-2" method="POST" action="{{ url_for('admin.biblioteca_tipo_editar', type_id=item.id) }}" data-prevent-duplicate>
+                                <label class="visually-hidden" for="type_{{ item.id }}">Nome do tipo de incidente</label>
+                                <input class="form-control" id="type_{{ item.id }}" name="name" value="{{ item.tipo_incidente }}" maxlength="100" required>
+                                <button class="btn btn-outline-secondary" type="submit">Salvar</button>
+                            </form>
+                        </td>
+                        <td>{{ type_counts[item.id] }}</td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('admin.biblioteca_tipo_excluir', type_id=item.id) }}" data-prevent-duplicate>
+                                <button class="btn btn-danger" type="submit" {% if type_counts[item.id] %}disabled title="Registro vinculado a incidentes"{% endif %} onclick="return confirm('Confirma a exclusão deste tipo de incidente?')">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            {{ empty_state('Nenhum tipo encontrado.', 'Crie um tipo para disponibilizá-lo no registro de incidentes.') }}
+        {% endif %}
+    </div>
+</section>
+
+<section class="app-card mb-4" id="cpas" aria-labelledby="commands-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="commands-title" class="h5 mb-1">CPA/Grande Comando</h2>
+            <p class="text-muted mb-0">Comandos disponíveis nos formulários e dashboards.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form class="row g-3 align-items-end mb-4" method="POST" action="{{ url_for('admin.biblioteca_cpa_criar') }}" data-prevent-duplicate>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="command_name">Novo CPA/Grande Comando</label>
+                <input class="form-control" id="command_name" name="name" maxlength="100" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <button class="btn btn-primary w-100" type="submit">Criar CPA</button>
+            </div>
+        </form>
+
+        {% if commands %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Batalhões</th>
+                        <th>Incidentes</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in commands %}
+                    <tr>
+                        <td>
+                            <form class="d-flex flex-column flex-md-row gap-2" method="POST" action="{{ url_for('admin.biblioteca_cpa_editar', command_id=item.id) }}" data-prevent-duplicate>
+                                <label class="visually-hidden" for="command_{{ item.id }}">Nome do CPA/Grande Comando</label>
+                                <input class="form-control" id="command_{{ item.id }}" name="name" value="{{ item.name }}" maxlength="100" required>
+                                <button class="btn btn-outline-secondary" type="submit">Salvar</button>
+                            </form>
+                        </td>
+                        <td>{{ command_unit_counts[item.id] }}</td>
+                        <td>{{ command_incident_counts[item.id] }}</td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('admin.biblioteca_cpa_excluir', command_id=item.id) }}" data-prevent-duplicate>
+                                <button class="btn btn-danger" type="submit" {% if command_unit_counts[item.id] or command_incident_counts[item.id] %}disabled title="Registro possui vínculos"{% endif %} onclick="return confirm('Confirma a exclusão deste CPA/Grande Comando?')">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            {{ empty_state('Nenhum CPA/Grande Comando encontrado.', 'Crie um comando para vinculá-lo aos batalhões.') }}
+        {% endif %}
+    </div>
+</section>
+
+<section class="app-card mb-4" id="unidades" aria-labelledby="units-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="units-title" class="h5 mb-1">Batalhão/Unidade</h2>
+            <p class="text-muted mb-0">Cada unidade pertence obrigatoriamente a um CPA/Grande Comando.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form class="row g-3 align-items-end mb-4" method="POST" action="{{ url_for('admin.biblioteca_unidade_criar') }}" data-prevent-duplicate>
+            <div class="col-12 col-md-5">
+                <label class="form-label" for="unit_command_id">CPA/Grande Comando</label>
+                <select class="form-select" id="unit_command_id" name="command_id" required>
+                    <option value="">Selecione</option>
+                    {% for command in all_commands %}
+                        <option value="{{ command.id }}">{{ command.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-5">
+                <label class="form-label" for="unit_name">Novo Batalhão/Unidade</label>
+                <input class="form-control" id="unit_name" name="name" maxlength="100" required>
+            </div>
+            <div class="col-12 col-md-2">
+                <button class="btn btn-primary w-100" type="submit">Criar</button>
+            </div>
+        </form>
+
+        {% if units %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Batalhão/Unidade</th>
+                        <th>CPA/Grande Comando</th>
+                        <th>Incidentes</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in units %}
+                    <tr>
+                        <td colspan="2">
+                            <form class="row g-2" method="POST" action="{{ url_for('admin.biblioteca_unidade_editar', unit_id=item.id) }}" data-prevent-duplicate>
+                                <div class="col-12 col-lg-5">
+                                    <label class="visually-hidden" for="unit_name_{{ item.id }}">Nome do Batalhão/Unidade</label>
+                                    <input class="form-control" id="unit_name_{{ item.id }}" name="name" value="{{ item.name }}" maxlength="100" required>
+                                </div>
+                                <div class="col-12 col-lg-5">
+                                    <label class="visually-hidden" for="unit_command_{{ item.id }}">CPA/Grande Comando</label>
+                                    <select class="form-select" id="unit_command_{{ item.id }}" name="command_id" required>
+                                        {% for command in all_commands %}
+                                            <option value="{{ command.id }}" {% if item.command_id == command.id %}selected{% endif %}>{{ command.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12 col-lg-2">
+                                    <button class="btn btn-outline-secondary w-100" type="submit">Salvar</button>
+                                </div>
+                            </form>
+                        </td>
+                        <td>{{ unit_incident_counts[item.id] }}</td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('admin.biblioteca_unidade_excluir', unit_id=item.id) }}" data-prevent-duplicate>
+                                <button class="btn btn-danger" type="submit" {% if unit_incident_counts[item.id] %}disabled title="Registro vinculado a incidentes"{% endif %} onclick="return confirm('Confirma a exclusão deste Batalhão/Unidade?')">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            {{ empty_state('Nenhum Batalhão/Unidade encontrado.', 'Crie uma unidade vinculada a um CPA/Grande Comando.') }}
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
