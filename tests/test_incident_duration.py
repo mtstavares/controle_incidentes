@@ -19,6 +19,7 @@ class IncidentDurationTest(unittest.TestCase):
             calculate_incident_duration(
                 start_date=datetime(2026, 7, 20, 8, 0),
                 end_date=datetime(2026, 7, 20, 18, 0),
+                today=date(2026, 7, 20),
             ).label,
             "0 dias",
         )
@@ -37,6 +38,23 @@ class IncidentDurationTest(unittest.TestCase):
             "2 dias",
         )
 
+    def test_zero_or_inconsistent_past_incident_falls_back_to_today(self):
+        self.assertEqual(
+            calculate_incident_duration(
+                start_date=datetime(2026, 7, 2, 8, 0),
+                end_date=datetime(2026, 7, 2, 9, 0),
+                today=date(2026, 7, 20),
+            ).label,
+            "18 dias",
+        )
+        recovered = calculate_incident_duration(
+            start_date=datetime(2026, 7, 19),
+            end_date=datetime(2026, 7, 18),
+            today=date(2026, 7, 20),
+        )
+        self.assertEqual(recovered.label, "1 dia")
+        self.assertEqual(recovered.reference, "start_date->today")
+
     def test_zero_time_is_valid_date_not_missing(self):
         duration = calculate_incident_duration(
             start_date=datetime(2026, 7, 1, 0, 0, 0),
@@ -48,8 +66,9 @@ class IncidentDurationTest(unittest.TestCase):
     def test_missing_and_inconsistent_dates_are_not_converted_to_zero(self):
         self.assertEqual(calculate_incident_duration(start_date=None).label, "Não informado")
         inconsistent = calculate_incident_duration(
-            start_date=datetime(2026, 7, 20),
-            end_date=datetime(2026, 7, 19),
+            start_date=datetime(2026, 7, 21),
+            end_date=datetime(2026, 7, 20),
+            today=date(2026, 7, 20),
         )
         self.assertEqual(inconsistent.label, "Data inconsistente")
         self.assertIsNone(inconsistent.days)

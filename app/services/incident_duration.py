@@ -74,12 +74,17 @@ def calculate_incident_duration(
     if not start:
         return IncidentDuration(label="Não informado", days=None, status="missing_start", reference="none")
 
+    current_date = today or local_now().date()
     end = to_local_date(end_date)
     if end is None:
-        end = today or local_now().date()
+        end = current_date
         end_reference = "today"
     else:
         end_reference = "end_date"
+
+    if (end < start or (end == start and start < current_date)) and start <= current_date:
+        end = current_date
+        end_reference = "today"
 
     if end < start:
         return IncidentDuration(
