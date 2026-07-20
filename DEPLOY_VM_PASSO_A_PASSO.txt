@@ -1,0 +1,168 @@
+DEPLOY DO DIVCIBER NA VM COM DOCKER
+==================================
+
+Contexto usado nos testes:
+- VM Ubuntu Server
+- Usuario: divciber-prod-test
+- Projeto em: /home/divciber-prod-test/apps/controle_incidentes
+- Dados persistentes em: /home/divciber-prod-test/apps/divciber-data
+- Porta publicada: 5005
+
+1. Acessar a VM via SSH
+----------------------
+No PowerShell do Windows:
+
+ssh divciber-prod-test@192.168.1.110
+
+Quando voltar para a rede fixa:
+
+ssh divciber-prod-test@10.44.44.210
+
+
+2. Atualizar o codigo pelo GitHub
+---------------------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+git fetch
+git checkout chore/full-validation-and-cleanup
+git pull
+
+
+3. Primeiro deploy com Docker Compose
+-------------------------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+chmod +x deploy.sh
+./deploy.sh
+
+O script faz:
+- git pull da branch atual;
+- cria .env se ainda nao existir;
+- cria pastas persistentes;
+- build da imagem;
+- sobe o container com docker compose;
+- mostra status e logs recentes.
+
+
+4. Acessar no navegador
+-----------------------
+Enquanto estiver no Wi-Fi/DHCP:
+
+http://192.168.1.110:5005
+
+Quando voltar para o IP fixo:
+
+http://10.44.44.210:5005
+
+
+5. Atualizar depois de novos commits
+------------------------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+./deploy.sh
+
+Se quiser atualizar sem git pull automatico:
+
+SKIP_GIT_PULL=1 ./deploy.sh
+
+
+6. Ver logs
+-----------
+Na VM:
+
+cd ~/apps/controle_incidentes
+docker compose logs -f divciber
+
+Ou apenas as ultimas linhas:
+
+docker compose logs --tail=100 divciber
+
+
+7. Parar e iniciar
+------------------
+Parar:
+
+cd ~/apps/controle_incidentes
+docker compose down
+
+Subir:
+
+cd ~/apps/controle_incidentes
+docker compose up -d
+
+Reiniciar:
+
+cd ~/apps/controle_incidentes
+docker compose restart divciber
+
+
+8. Banco e arquivos persistentes
+--------------------------------
+O banco fica fora do container, em:
+
+~/apps/divciber-data/instance/divciber.db
+
+Logs ficam em:
+
+~/apps/divciber-data/logs
+
+Esses arquivos nao devem ser commitados.
+
+
+9. Copiar banco do Windows para a VM
+------------------------------------
+No PowerShell do Windows:
+
+scp "C:\Users\46047228895\Desktop\Projetos Matheus\DivCiber\incidentes_controle_divciber\instance\divciber.db" divciber-prod-test@192.168.1.110:/home/divciber-prod-test/apps/divciber-data/instance/divciber.db
+
+Depois na VM:
+
+cd ~/apps/controle_incidentes
+docker compose restart divciber
+
+Se der Permission denied:
+
+docker compose down
+sudo chown -R divciber-prod-test:divciber-prod-test ~/apps/divciber-data/instance
+
+Repita o scp e depois:
+
+docker compose up -d
+
+
+10. Voltar para IP fixo 10.44.44.210
+------------------------------------
+Quando voltar para a rede 10.44.44.x, ajuste o Netplan da VM para:
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp0s3:
+      dhcp4: false
+      addresses:
+        - 10.44.44.210/24
+      routes:
+        - to: default
+          via: 10.44.44.1
+      nameservers:
+        addresses:
+          - 10.44.44.1
+          - 10.61.255.62
+
+Aplicar:
+
+sudo netplan generate
+sudo netplan apply
+ip a
+
+
+11. Observacoes de seguranca
+----------------------------
+- O arquivo .env gerado no servidor contem SECRET_KEY e nao deve ir para o GitHub.
+- O banco, backups, logs e uploads ficam fora do repositorio.
+- Para producao definitiva, revise a senha inicial admin/admin123 e remova credenciais padrao.
+- Enquanto o run.py fizer bootstrap no import, manter GUNICORN_WORKERS=1 evita corrida na criacao inicial do banco.
