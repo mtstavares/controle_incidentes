@@ -48,6 +48,10 @@
                 <span class="sidebar-link__icon" aria-hidden="true">U</span>
                 <span>Gestão de usuários</span>
             </a>
+            <a class="sidebar-link" href="{{ url_for('admin.biblioteca') }}" {% if endpoint.startswith('admin.biblioteca') %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">B</span>
+                <span>Biblioteca</span>
+            </a>
             <a class="sidebar-link" href="{{ url_for('admin.audit_logs') }}" {% if endpoint in ['admin.audit_logs', 'admin.audit_log_detail'] %}aria-current="page"{% endif %}>
                 <span class="sidebar-link__icon" aria-hidden="true">L</span>
                 <span>Logs de auditoria</span>

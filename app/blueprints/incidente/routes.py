@@ -26,23 +26,6 @@ from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_
 MAX_SEARCH_LENGTH = 200
 INCIDENTS_PER_PAGE = 10
 SAO_PAULO_TZ = APP_TIMEZONE
-TIPOS_INCIDENTE_PERMITIDOS = {
-    "Requisições automatizadas",
-    "Transferência de arquivo malicioso",
-    "Bloqueio de acesso a VPN",
-    "Phishing",
-    "Comando e Controle",
-    "Incidente envolvendo VPN corporativa",
-    "Criptomining",
-    "Malware",
-    "Ativador KMS",
-    "Tentativa de intrusão",
-    "Comprometimento de Credenciais",
-    "Quebra de Confidencialidade",
-    "Brute Force",
-}
-
-
 def _sort_units_query(query):
     return query.order_by(
         OrganizationalUnit.sort_order.is_(None),
@@ -116,9 +99,6 @@ def api_organizational_command_units(command_id):
         "command": {"id": command.id, "name": command.name},
         "units": [{"id": unit.id, "name": unit.name} for unit in units],
     })
-TIPOS_INCIDENTE_FORM = sorted(TIPOS_INCIDENTE_PERMITIDOS)
-
-
 def _mojibake_variant(value):
     return value.encode("utf-8").decode("latin-1")
 
@@ -189,11 +169,44 @@ def _preserve_registration_time(value, current_start_date=None):
     return datetime.combine(selected_date, current_time).replace(microsecond=0, tzinfo=None)
 
 
+def _incident_type_values(include_existing=True):
+    db_values = [
+        row[0]
+        for row in db.session.query(TipoIncidente.tipo_incidente).order_by(TipoIncidente.tipo_incidente.asc()).all()
+        if row[0]
+    ]
+    if include_existing:
+        db_values.extend(
+            row[0]
+            for row in db.session.query(Incidente.incident_type).distinct().all()
+            if row[0]
+        )
+    return sorted(set(db_values), key=str.casefold)
+
+
+def _incident_type_allowed(value):
+    return bool(value and value in _incident_type_values())
+
+
 def _get_incident_types_for_form(current_value=None):
-    values = list(TIPOS_INCIDENTE_FORM)
+    values = _incident_type_values()
     if current_value and current_value not in values:
         values.append(current_value)
-    return values
+    return sorted(set(values), key=str.casefold)
+
+
+def _status_filter_options():
+    values = [
+        row[0]
+        for row in db.session.query(StatusIncidente.status).order_by(StatusIncidente.status.asc()).all()
+        if row[0]
+    ]
+    values.extend(
+        row[0]
+        for row in db.session.query(Incidente.status_incident).distinct().all()
+        if row[0]
+    )
+    return [(value,) for value in sorted(set(values), key=str.casefold)]
 
 
 def _filter_values_with_legacy(value):
@@ -466,7 +479,7 @@ def incidents_list():
     total_incidents = Incidente.query.count()
     open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
     closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
-    status_options = db.session.query(Incidente.status_incident).distinct().all()
+    status_options = _status_filter_options()
 
     return render_template('incidente/incidentes.html',
                            title="Incidentes de segurança",
@@ -568,7 +581,7 @@ def search_incidents():
         incidentes_com_tempo.append(inc)
 
     # Para o filtro de status no HTML
-    status_options = db.session.query(Incidente.status_incident).distinct().all()
+    status_options = _status_filter_options()
 
     return render_template('incidente/incidentes.html',
                            title="Incidentes de segurança",
@@ -606,7 +619,7 @@ def new_incident():
             raw_description = request.form.get('description', '')
             user_id = current_user.id
 
-            if incident_type not in TIPOS_INCIDENTE_PERMITIDOS:
+            if not _incident_type_allowed(incident_type):
                 flash('Tipo de incidente informado é inválido.', 'danger')
                 return _render_incident_form_response(
                     title="Registro de Incidente",
@@ -830,7 +843,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         cia = request.form.get('cia', '').strip()
         raw_description = request.form.get('description', '')
 
-        if incident_type not in TIPOS_INCIDENTE_PERMITIDOS and incident_type != original_data['incident_type']:
+        if not _incident_type_allowed(incident_type) and incident_type != original_data['incident_type']:
             flash('Tipo de incidente informado é inválido.', 'danger')
             return _render_incident_form_response(
                 title="Editar Incidente",
@@ -1083,7 +1096,7 @@ def search_incident():
 
     resultados = query.filter(or_(*filters)).all()
 
-    status_options = db.session.query(Incidente.status_incident).distinct().all()
+    status_options = _status_filter_options()
     return render_template(
         'incidente/incidentes.html',
         title=f"Incidentes de segurança - pesquisa: {termo}",
@@ -1270,10 +1283,9 @@ def _dashboard_filter_options():
     cpa_rows = db.session.query(Unidades.cpa).filter(Unidades.cpa.isnot(None)).distinct().order_by(Unidades.cpa.asc()).all()
     cpas = [row[0] for row in cpa_rows if row[0]]
     unidades = Unidades.query.order_by(Unidades.cpa.asc(), Unidades.btl.asc()).all()
-    db_types = [row[0] for row in db.session.query(TipoIncidente.tipo_incidente).all() if row[0]]
     incident_types = [
         SimpleNamespace(tipo_incidente=value)
-        for value in sorted(set(TIPOS_INCIDENTE_PERMITIDOS).union(db_types))
+        for value in _incident_type_values()
     ]
     return {
         "incident_types": incident_types,
@@ -1303,7 +1315,7 @@ def _dashboard_filters_from_request():
     cpa = (request.args.get("cpa") or request.args.get("cpaId") or "todos").strip()
     btl = (request.args.get("btl") or request.args.get("btlId") or "todos").strip()
 
-    if incident_type and incident_type != "todos" and incident_type not in TIPOS_INCIDENTE_PERMITIDOS and not TipoIncidente.query.filter_by(tipo_incidente=incident_type).first():
+    if incident_type and incident_type != "todos" and not _incident_type_allowed(incident_type):
         abort(400, description="Tipo de incidente inválido.")
     if status_filter and status_filter != "todos" and not StatusIncidente.query.filter_by(status=status_filter).first():
         abort(400, description="Status inválido.")

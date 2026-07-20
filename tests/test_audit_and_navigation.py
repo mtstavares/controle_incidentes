@@ -42,7 +42,14 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         db.session.add(User(username="viewer", name="Viewer Teste", email="viewer@test", profile="Viewer", is_temp_password=False, must_change_password=False, password=hash("viewer123")))
         db.session.add(StatusIncidente(status="Em Análise", desc_status=""))
         db.session.add(StatusIncidente(status="Encerrado", desc_status=""))
-        db.session.add(TipoIncidente(tipo_incidente="Phishing", desc_incidente=""))
+        for incident_type in [
+            "Phishing",
+            "Brute Force",
+            "Transferência de arquivo malicioso",
+            "Tentativa de intrusão",
+            "Comprometimento de Credenciais",
+        ]:
+            db.session.add(TipoIncidente(tipo_incidente=incident_type, desc_incidente=""))
         db.session.add(Unidades(cpa="CPA Teste", btl="BTL Teste"))
         db.session.flush()
         command = OrganizationalCommand(name="CPA Teste", active=True, sort_order=1)
@@ -84,6 +91,7 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         admin_html = self.client.get("/admin/logs-auditoria").get_data(as_text=True)
         self.assertIn("Administração", admin_html)
         self.assertIn("Logs de auditoria", admin_html)
+        self.assertIn("Biblioteca", admin_html)
 
     def test_new_routes_auth_and_authorization(self):
         self.assertEqual(self.client.get("/credenciais-comprometidas").status_code, 302)
@@ -91,10 +99,12 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/credenciais-comprometidas").status_code, 200)
         self.assertEqual(self.client.get("/dashboard-credenciais").status_code, 200)
         self.assertEqual(self.client.get("/admin/logs-auditoria").status_code, 403)
+        self.assertEqual(self.client.get("/admin/biblioteca").status_code, 403)
 
         self.client.get("/logout")
         self.login("admin", "admin123")
         self.assertEqual(self.client.get("/admin/logs-auditoria").status_code, 200)
+        self.assertEqual(self.client.get("/admin/biblioteca").status_code, 200)
 
     def test_authentication_audit_without_password(self):
         self.client.post("/login", data={"username": "admin", "password": "wrong"})
@@ -204,6 +214,79 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
 
         first_log = AuditLog.query.first()
         self.assertEqual(self.client.post(f"/admin/logs-auditoria/{first_log.id}").status_code, 405)
+
+    def test_admin_library_crud_guards_and_dynamic_incident_options(self):
+        self.login("admin", "admin123")
+
+        self.client.post("/admin/biblioteca/status/criar", data={"name": "Triagem nova"}, follow_redirects=True)
+        status = StatusIncidente.query.filter_by(status="Triagem nova").first()
+        self.assertIsNotNone(status)
+        self.client.post("/admin/biblioteca/status/criar", data={"name": "  TRIAGEM   NOVA  "}, follow_redirects=True)
+        self.assertEqual(StatusIncidente.query.filter_by(status="Triagem nova").count(), 1)
+
+        self.client.post("/admin/biblioteca/tipo/criar", data={"name": "Malware novo"}, follow_redirects=True)
+        incident_type = TipoIncidente.query.filter_by(tipo_incidente="Malware novo").first()
+        self.assertIsNotNone(incident_type)
+        incident_form = self.client.get("/incidente/new").get_data(as_text=True)
+        self.assertIn("Malware novo", incident_form)
+
+        self.client.post("/admin/biblioteca/cpa/criar", data={"name": "CPA Biblioteca"}, follow_redirects=True)
+        command = OrganizationalCommand.query.filter_by(name="CPA Biblioteca").first()
+        self.assertIsNotNone(command)
+        self.client.post(
+            "/admin/biblioteca/unidade/criar",
+            data={"command_id": command.id, "name": "Unidade Biblioteca"},
+            follow_redirects=True,
+        )
+        unit = OrganizationalUnit.query.filter_by(command_id=command.id, name="Unidade Biblioteca").first()
+        self.assertIsNotNone(unit)
+        self.client.post(
+            "/admin/biblioteca/unidade/criar",
+            data={"command_id": command.id, "name": " unidade   biblioteca "},
+            follow_redirects=True,
+        )
+        self.assertEqual(OrganizationalUnit.query.filter_by(command_id=command.id).count(), 1)
+
+        admin = User.query.filter_by(username="admin").first()
+        incident = Incidente(
+            status_incident=status.status,
+            start_date=datetime(2026, 7, 14),
+            incident_type=incident_type.tipo_incidente,
+            report_number="REL-LIB",
+            ticket_number="TCK-LIB",
+            cpa=command.name,
+            btl=unit.name,
+            command_id=command.id,
+            unit_id=unit.id,
+            cia="1 CIA",
+            description="<p>Biblioteca</p>",
+            description_plain_text="Biblioteca",
+            user_id=admin.id,
+        )
+        db.session.add(incident)
+        db.session.commit()
+
+        self.client.post(
+            f"/admin/biblioteca/status/{status.id}/excluir",
+            follow_redirects=True,
+        )
+        self.client.post(
+            f"/admin/biblioteca/tipo/{incident_type.id}/excluir",
+            follow_redirects=True,
+        )
+        self.client.post(
+            f"/admin/biblioteca/unidade/{unit.id}/excluir",
+            follow_redirects=True,
+        )
+        self.client.post(
+            f"/admin/biblioteca/cpa/{command.id}/excluir",
+            follow_redirects=True,
+        )
+        self.assertIsNotNone(db.session.get(StatusIncidente, status.id))
+        self.assertIsNotNone(db.session.get(TipoIncidente, incident_type.id))
+        self.assertIsNotNone(db.session.get(OrganizationalUnit, unit.id))
+        self.assertIsNotNone(db.session.get(OrganizationalCommand, command.id))
+        self.assertIsNotNone(AuditLog.query.filter_by(modulo="Administração - Biblioteca").first())
 
     def test_user_html_is_escaped(self):
         incident = self.create_incident()
