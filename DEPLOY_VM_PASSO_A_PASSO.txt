@@ -1,141 +1,37 @@
-DEPLOY DO DIVCIBER NA VM COM DOCKER
-==================================
+DEPLOY DO DIVCIBER NA VM COM DOCKER - REDE CABEADA
+==================================================
 
-Contexto usado nos testes:
+Contexto padrao:
 - VM Ubuntu Server
-- Usuario: divciber-prod-test
+- Usuario da VM: divciber-prod-test
+- IP fixo da VM: 10.44.44.210
 - Projeto em: /home/divciber-prod-test/apps/controle_incidentes
 - Dados persistentes em: /home/divciber-prod-test/apps/divciber-data
 - Porta publicada: 5005
-
-1. Acessar a VM via SSH
-----------------------
-No PowerShell do Windows:
-
-ssh divciber-prod-test@192.168.1.110
-
-Quando voltar para a rede fixa:
-
-ssh divciber-prod-test@10.44.44.210
+- URL da aplicacao: http://10.44.44.210:5005
 
 
-2. Atualizar o codigo pelo GitHub
----------------------------------
+1. Configurar rede cabeada no VirtualBox
+----------------------------------------
+No VirtualBox:
+
+1. Abra Configuracoes da VM.
+2. Va em Rede.
+3. Adaptador 1:
+   - Habilitar Placa de Rede: marcado
+   - Conectado a: Placa em modo Bridge
+   - Nome: selecione a placa Ethernet/cabeada do computador
+   - Cabo conectado: marcado
+4. Salve.
+
+
+2. Configurar IP fixo na VM
+---------------------------
 Na VM:
 
-cd ~/apps/controle_incidentes
-git fetch
-git checkout chore/full-validation-and-cleanup
-git pull
+sudo nano /etc/netplan/00-installer-config.yaml
 
-
-3. Primeiro deploy com Docker Compose
--------------------------------------
-Na VM:
-
-cd ~/apps/controle_incidentes
-chmod +x deploy.sh
-./deploy.sh
-
-O script faz:
-- git pull da branch atual;
-- cria .env se ainda nao existir;
-- cria pastas persistentes;
-- build da imagem;
-- sobe o container com docker compose;
-- mostra status e logs recentes.
-
-
-4. Acessar no navegador
------------------------
-Enquanto estiver no Wi-Fi/DHCP:
-
-http://192.168.1.110:5005
-
-Quando voltar para o IP fixo:
-
-http://10.44.44.210:5005
-
-
-5. Atualizar depois de novos commits
-------------------------------------
-Na VM:
-
-cd ~/apps/controle_incidentes
-./deploy.sh
-
-Se quiser atualizar sem git pull automatico:
-
-SKIP_GIT_PULL=1 ./deploy.sh
-
-
-6. Ver logs
------------
-Na VM:
-
-cd ~/apps/controle_incidentes
-docker compose logs -f divciber
-
-Ou apenas as ultimas linhas:
-
-docker compose logs --tail=100 divciber
-
-
-7. Parar e iniciar
-------------------
-Parar:
-
-cd ~/apps/controle_incidentes
-docker compose down
-
-Subir:
-
-cd ~/apps/controle_incidentes
-docker compose up -d
-
-Reiniciar:
-
-cd ~/apps/controle_incidentes
-docker compose restart divciber
-
-
-8. Banco e arquivos persistentes
---------------------------------
-O banco fica fora do container, em:
-
-~/apps/divciber-data/instance/divciber.db
-
-Logs ficam em:
-
-~/apps/divciber-data/logs
-
-Esses arquivos nao devem ser commitados.
-
-
-9. Copiar banco do Windows para a VM
-------------------------------------
-No PowerShell do Windows:
-
-scp "C:\Users\46047228895\Desktop\Projetos Matheus\DivCiber\incidentes_controle_divciber\instance\divciber.db" divciber-prod-test@192.168.1.110:/home/divciber-prod-test/apps/divciber-data/instance/divciber.db
-
-Depois na VM:
-
-cd ~/apps/controle_incidentes
-docker compose restart divciber
-
-Se der Permission denied:
-
-docker compose down
-sudo chown -R divciber-prod-test:divciber-prod-test ~/apps/divciber-data/instance
-
-Repita o scp e depois:
-
-docker compose up -d
-
-
-10. Voltar para IP fixo 10.44.44.210
-------------------------------------
-Quando voltar para a rede 10.44.44.x, ajuste o Netplan da VM para:
+Conteudo esperado:
 
 network:
   version: 2
@@ -159,10 +55,210 @@ sudo netplan generate
 sudo netplan apply
 ip a
 
+Validar conectividade:
 
-11. Observacoes de seguranca
+ping -c 4 10.44.44.1
+ping -c 4 10.61.255.62
+
+
+3. Acessar a VM via SSH
+-----------------------
+No PowerShell do Windows:
+
+ssh divciber-prod-test@10.44.44.210
+
+
+4. Instalar dependencias da VM
+------------------------------
+Na VM:
+
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y ca-certificates curl git nano unzip openssh-server
+
+
+5. Instalar Docker
+------------------
+Na VM:
+
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+Testar Docker:
+
+sudo docker run hello-world
+
+Liberar Docker sem sudo:
+
+sudo usermod -aG docker $USER
+
+Depois saia e entre de novo no SSH:
+
+exit
+ssh divciber-prod-test@10.44.44.210
+
+Validar:
+
+docker ps
+
+
+6. Clonar ou atualizar o projeto
+--------------------------------
+Se ainda nao clonou:
+
+mkdir -p ~/apps
+cd ~/apps
+git clone https://github.com/mtstavares/controle_incidentes.git
+cd controle_incidentes
+
+Se ja clonou:
+
+cd ~/apps/controle_incidentes
+
+Usar a branch de deploy:
+
+git fetch origin
+git checkout chore/full-validation-and-cleanup
+git pull
+
+
+7. Primeiro deploy
+------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+chmod +x deploy.sh
+./deploy.sh
+
+O script faz:
+- git pull da branch atual;
+- cria .env se ainda nao existir;
+- cria pastas persistentes;
+- build da imagem;
+- sobe o container com Docker Compose;
+- mostra status e logs recentes.
+
+
+8. Acessar no navegador
+-----------------------
+No Windows:
+
+http://10.44.44.210:5005
+
+
+9. Atualizar depois de novos commits
+------------------------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+./deploy.sh
+
+Se quiser redeploy sem git pull automatico:
+
+SKIP_GIT_PULL=1 ./deploy.sh
+
+
+10. Ver status e logs
+---------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+docker compose ps
+docker compose logs --tail=100 divciber
+
+Logs em tempo real:
+
+docker compose logs -f divciber
+
+
+11. Parar, subir e reiniciar
+----------------------------
+Parar:
+
+cd ~/apps/controle_incidentes
+docker compose down
+
+Subir:
+
+cd ~/apps/controle_incidentes
+docker compose up -d
+
+Reiniciar:
+
+cd ~/apps/controle_incidentes
+docker compose restart divciber
+
+
+12. Banco e arquivos persistentes
+---------------------------------
+O banco fica fora do container:
+
+~/apps/divciber-data/instance/divciber.db
+
+Logs ficam em:
+
+~/apps/divciber-data/logs
+
+Esses arquivos nao devem ser commitados.
+
+
+13. Copiar banco do Windows para a VM
+-------------------------------------
+No PowerShell do Windows:
+
+scp "C:\Users\46047228895\Desktop\Projetos Matheus\DivCiber\incidentes_controle_divciber\instance\divciber.db" divciber-prod-test@10.44.44.210:/home/divciber-prod-test/apps/divciber-data/instance/divciber.db
+
+Depois na VM:
+
+cd ~/apps/controle_incidentes
+docker compose restart divciber
+
+Se der Permission denied:
+
+cd ~/apps/controle_incidentes
+docker compose down
+sudo chown -R divciber-prod-test:divciber-prod-test ~/apps/divciber-data/instance
+
+Repita o scp e depois:
+
+docker compose up -d
+
+
+14. Backup manual do banco
+--------------------------
+Na VM:
+
+mkdir -p ~/apps/backups
+cp ~/apps/divciber-data/instance/divciber.db ~/apps/backups/divciber_$(date +%Y%m%d_%H%M%S).db
+
+
+15. Restaurar backup do banco
+-----------------------------
+Na VM:
+
+cd ~/apps/controle_incidentes
+docker compose down
+cp ~/apps/backups/NOME_DO_BACKUP.db ~/apps/divciber-data/instance/divciber.db
+docker compose up -d
+
+
+16. Observacoes de seguranca
 ----------------------------
 - O arquivo .env gerado no servidor contem SECRET_KEY e nao deve ir para o GitHub.
 - O banco, backups, logs e uploads ficam fora do repositorio.
-- Para producao definitiva, revise a senha inicial admin/admin123 e remova credenciais padrao.
+- Troque a senha inicial admin/admin123 antes de uso real.
 - Enquanto o run.py fizer bootstrap no import, manter GUNICORN_WORKERS=1 evita corrida na criacao inicial do banco.
+- Antes de expor fora da rede interna, configure HTTPS, firewall e politica formal de backup.

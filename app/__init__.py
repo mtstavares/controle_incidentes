@@ -67,7 +67,7 @@ def create_app(config_class=ProductionConfig):
     app.register_blueprint(admin_bp)
     
     lm.login_view = 'users.login' # Definindo a rota de login
-    lm.login_message = "Por favor, faça login para acessar o sistema." # Mensagem exibida quando o usuário não está autenticado
+    lm.login_message = "" # Evita mensagem inicial ao abrir a tela de login sem sessao
     
         
     #Implementar postertiormente manipuladores de erro personalizados

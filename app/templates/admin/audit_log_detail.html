@@ -37,40 +37,28 @@
     </div>
 </section>
 
-<section class="app-card mb-4" aria-labelledby="audit-agent-title">
-    <div class="app-card__header">
-        <h2 id="audit-agent-title" class="h5 mb-0">User agent</h2>
-    </div>
-    <div class="app-card__body">
-        <p class="text-preserve mb-0">{{ log.user_agent or 'N/A' }}</p>
-    </div>
-</section>
-
 <section class="app-card" aria-labelledby="audit-changes-title">
     <div class="app-card__header">
         <h2 id="audit-changes-title" class="h5 mb-0">Alterações</h2>
     </div>
     <div class="app-card__body">
         {% if log.alteracoes %}
-            <div class="app-table-wrap">
-                <table class="table app-table">
-                    <thead>
-                        <tr>
-                            <th>Campo</th>
-                            <th>Valor anterior</th>
-                            <th>Valor posterior</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for campo, valores in log.alteracoes.items() %}
-                        <tr>
-                            <td>{{ campo }}</td>
-                            <td class="text-preserve">{{ valores.anterior if valores.anterior is not none else 'N/A' }}</td>
-                            <td class="text-preserve">{{ valores.novo if valores.novo is not none else 'N/A' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="audit-change-list">
+                {% for campo, valores in log.alteracoes.items() %}
+                    <article class="audit-change-item">
+                        <h3 class="audit-change-item__field">{{ campo }}</h3>
+                        <div class="audit-change-item__values">
+                            <div>
+                                <span class="audit-change-item__label">Antes</span>
+                                <p class="audit-change-item__value text-preserve">{{ valores.anterior if valores.anterior is not none else 'N/A' }}</p>
+                            </div>
+                            <div>
+                                <span class="audit-change-item__label">Depois</span>
+                                <p class="audit-change-item__value text-preserve">{{ valores.novo if valores.novo is not none else 'N/A' }}</p>
+                            </div>
+                        </div>
+                    </article>
+                {% endfor %}
             </div>
         {% else %}
             <p class="text-muted mb-0">Este evento não possui alterações de campos auditáveis.</p>

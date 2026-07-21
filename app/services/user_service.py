@@ -61,6 +61,30 @@ def email_existente(email):
     return User.query.filter(db.func.lower(User.email) == email.lower()).first()
 
 
+def username_ativo_existente(username):
+    return User.query.filter(
+        db.func.lower(User.username) == username.lower(),
+        User.is_active.is_(True),
+    ).first()
+
+
+def email_ativo_existente(email):
+    return User.query.filter(
+        db.func.lower(User.email) == email.lower(),
+        User.is_active.is_(True),
+    ).first()
+
+
+def usuario_inativo_por_username_ou_email(username, email):
+    return User.query.filter(
+        User.is_active.is_(False),
+        db.or_(
+            db.func.lower(User.username) == username.lower(),
+            db.func.lower(User.email) == email.lower(),
+        ),
+    ).all()
+
+
 def gerar_hash_senha(password):
     try:
         return generate_password_hash(password, method="scrypt")
