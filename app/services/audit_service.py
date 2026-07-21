@@ -29,6 +29,7 @@ class AuditAction:
     EXCLUIR_ANEXO = "EXCLUIR_ANEXO"
     USER_DELETED = "USER_DELETED"
     USER_DELETE_DENIED = "USER_DELETE_DENIED"
+    IMPORTAR_CREDENCIAIS = "IMPORTAR_CREDENCIAIS"
 
 
 AUDITABLE_FIELDS = {
@@ -79,6 +80,19 @@ AUDITABLE_FIELDS = {
         "deleted_at",
     },
     "AuditLog": {"id", "timestamp", "request_id", "resultado"},
+    "CredencialComprometida": {
+        "nome",
+        "cpf",
+        "email",
+        "data_coleta",
+        "permitiu_acesso",
+        "acesso_ad",
+        "acesso_ms",
+        "situacao_legal",
+        "mensagem_bloqueio",
+        "imported_at",
+        "imported_by_id",
+    },
 }
 
 SENSITIVE_KEYS = {

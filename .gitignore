@@ -50,5 +50,6 @@ secrets/
 # IDE e artefatos locais
 .vscode/
 *.xlsx
+*.xls
 *.csv
 *.png
