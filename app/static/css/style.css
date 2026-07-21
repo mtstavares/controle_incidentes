@@ -764,6 +764,50 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.audit-change-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.audit-change-item {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+}
+
+.audit-change-item__field {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.audit-change-item__values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.audit-change-item__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.audit-change-item__value {
+  min-height: 44px;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
 .timeline {
   display: grid;
   gap: var(--space-4);
@@ -1299,6 +1343,7 @@ h1 {
 
   .metric-grid,
   .detail-grid,
+  .audit-change-item__values,
   .record-meta {
     grid-template-columns: 1fr;
   }

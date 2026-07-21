@@ -797,10 +797,7 @@ def audit_logs():
     end_date = _parse_date(request.args.get("end_date"), end=True)
     usuario = request.args.get("usuario", "").strip()
     acao = request.args.get("acao", "").strip()
-    modulo = request.args.get("modulo", "").strip()
     resultado = request.args.get("resultado", "").strip()
-    entidade = request.args.get("entidade", "").strip()
-    entidade_id = request.args.get("entidade_id", "").strip()
 
     if start_date:
         query = query.filter(AuditLog.timestamp >= start_date)
@@ -810,20 +807,23 @@ def audit_logs():
         query = query.filter(AuditLog.usuario_identificacao.ilike(f"%{usuario}%"))
     if acao:
         query = query.filter(AuditLog.acao == acao)
-    if modulo:
-        query = query.filter(AuditLog.modulo.ilike(f"%{modulo}%"))
     if resultado:
         query = query.filter(AuditLog.resultado == resultado)
-    if entidade:
-        query = query.filter(AuditLog.entidade == entidade)
-    if entidade_id:
-        query = query.filter(AuditLog.entidade_id == entidade_id)
 
     pagination = query.order_by(AuditLog.timestamp.desc()).paginate(
         page=page,
         per_page=per_page,
         error_out=False,
     )
+    filtros = {
+        "start_date": request.args.get("start_date", ""),
+        "end_date": request.args.get("end_date", ""),
+        "usuario": usuario,
+        "acao": acao,
+        "resultado": resultado,
+        "per_page": str(per_page),
+    }
+    pagination_args = {key: value for key, value in filtros.items() if value}
 
     registrar_auditoria(
         acao=AuditAction.VISUALIZAR,
@@ -837,8 +837,8 @@ def audit_logs():
         title="Logs de auditoria",
         logs=pagination.items,
         pagination=pagination,
-        filtros=request.args,
-        pagination_args={k: v for k, v in request.args.items() if k != "page"},
+        filtros=filtros,
+        pagination_args=pagination_args,
         action_options=[
             AuditAction.LOGIN,
             AuditAction.LOGOUT,
