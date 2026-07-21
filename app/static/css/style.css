@@ -329,6 +329,7 @@ h1 {
   max-width: 760px;
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
+  
 }
 
 .app-card {
@@ -362,7 +363,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 .metric-card {
