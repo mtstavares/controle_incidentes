@@ -9,41 +9,11 @@
     </div>
 </section>
 
-<section class="app-card incident-registry" aria-labelledby="incident-registry-title">
-    <div class="app-card__header">
-        <div>
-            <h2 id="incident-registry-title" class="h5 mb-1">Registro de incidentes</h2>
-        </div>
-    </div>
-    <div class="app-card__body">
-        <div class="incident-registry__toolbar">
-            {% if current_user.profile in ['Admin', 'User'] %}
-            <a class="btn btn-primary" href="{{ url_for('incidente.new_incident') }}">Registrar novo incidente</a>
-            {% endif %}
-
-            <div class="incident-search">
-                <label for="global_incident_search" class="visually-hidden">Pesquisar em todos os dados dos incidentes</label>
-                <input
-                    type="search"
-                    id="global_incident_search"
-                    name="q"
-                    class="form-control"
-                    value="{{ q|default('') }}"
-                    placeholder="Pesquisar nos incidentes..."
-                    autocomplete="off"
-                    spellcheck="false"
-                    data-incident-search-input
-                >
-            </div>
-        </div>
-    </div>
-</section>
-
 <section class="app-card mb-4" aria-labelledby="filters-title">
     <div class="app-card__header">
         <div>
             <h2 id="filters-title" class="h5 mb-1">Filtros</h2>
-            <p class="text-muted mb-0">Refine os registros por status e ordenação.</p>
+            
         </div>
     </div>
     <div class="app-card__body">
@@ -78,6 +48,36 @@
                 <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Limpar</a>
             </div>
         </form>
+    </div>
+</section>
+
+<section class="app-card incident-registry" aria-labelledby="incident-registry-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="incident-registry-title" class="h5 mb-1">Registro de incidentes</h2>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <div class="incident-registry__toolbar">
+            {% if current_user.profile in ['Admin', 'User'] %}
+            <a class="btn btn-primary" href="{{ url_for('incidente.new_incident') }}">Registrar novo incidente</a>
+            {% endif %}
+
+            <div class="incident-search">
+                <label for="global_incident_search" class="visually-hidden">Pesquisar em todos os dados dos incidentes</label>
+                <input
+                    type="search"
+                    id="global_incident_search"
+                    name="q"
+                    class="form-control"
+                    value="{{ q|default('') }}"
+                    placeholder="Pesquisar nos incidentes..."
+                    autocomplete="off"
+                    spellcheck="false"
+                    data-incident-search-input
+                >
+            </div>
+        </div>
     </div>
 </section>
 

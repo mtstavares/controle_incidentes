@@ -119,12 +119,12 @@ a:hover {
 }
 
 .app-logo {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
   border-radius: 50%;
   object-fit: cover;
-  background: #fff;
+  
 }
 
 .app-brand__name {
@@ -329,6 +329,7 @@ h1 {
   max-width: 760px;
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
+  
 }
 
 .app-card {
@@ -362,7 +363,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 .metric-card {
