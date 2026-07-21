@@ -98,11 +98,11 @@
     <div class="app-card__body">
         {% if cards.total > 0 and chart.groups %}
         <div class="hierarchy-chart" style="--chart-max: {{ max_btl_total or 1 }};">
-            <div class="hierarchy-chart__axis" aria-hidden="true">
-                <span>0</span>
-                <span>{{ ((max_btl_total or 0) / 2)|round(0, 'ceil')|int }}</span>
-                <span>{{ max_btl_total }}</span>
-            </div>
+            <!-- <div class="hierarchy-chart__axis" aria-hidden="true">
+                <span style="color:transparent">0</span>
+                <span style="color:transparent">{{ ((max_btl_total or 0) / 2)|round(0, 'ceil')|int }}</span>
+                <span style="color:transparent">{{ max_btl_total }}</span>
+            </div> -->
             {% for group in chart.groups %}
             <section class="hierarchy-group" aria-labelledby="cpa-{{ loop.index }}">
                 <h3 id="cpa-{{ loop.index }}" class="hierarchy-group__title">{{ group.cpaName }} — {{ group.total }} incidentes</h3>
