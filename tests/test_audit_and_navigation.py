@@ -1016,6 +1016,38 @@ CPA/M-1
         self.assertFalse(novo.is_temp_password)
         self.assertEqual(self.client.get("/incidentes").status_code, 200)
 
+    def test_register_reactivates_inactive_user_with_same_re_and_email(self):
+        self.login("admin", "admin123")
+        inactive = User.query.filter_by(username="viewer").first()
+        inactive.is_active = False
+        inactive.deleted_at = datetime.now()
+        inactive.deleted_by_id = User.query.filter_by(username="admin").first().id
+        db.session.commit()
+
+        response = self.client.post("/register", data={
+            "username": "viewer",
+            "name": "Viewer Reativado",
+            "email": "viewer.reativado@test.com",
+            "profile": "User",
+            "password": "NovaTemp@123",
+        }, follow_redirects=True)
+
+        html = response.get_data(as_text=True)
+        self.assertIn("Usuário reativado com sucesso", html)
+        db.session.refresh(inactive)
+        self.assertTrue(inactive.is_active)
+        self.assertIsNone(inactive.deleted_at)
+        self.assertIsNone(inactive.deleted_by_id)
+        self.assertEqual(inactive.name, "Viewer Reativado")
+        self.assertEqual(inactive.email, "viewer.reativado@test.com")
+        self.assertEqual(inactive.profile, "User")
+        self.assertTrue(inactive.must_change_password)
+        self.assertTrue(inactive.is_temp_password)
+        self.assertNotEqual(inactive.password, "NovaTemp@123")
+        log = AuditLog.query.filter_by(acao="ALTERAR_USUARIO", entidade_id=str(inactive.id)).first()
+        self.assertIsNotNone(log)
+        self.assertNotIn("NovaTemp@123", str(log.alteracoes))
+
     def test_user_search_and_profile_change(self):
         self.login("admin", "admin123")
         self.client.post("/register", data={

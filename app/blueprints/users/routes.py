@@ -7,13 +7,14 @@ from app.models import User
 from app.services.audit_service import AuditAction, registrar_auditoria
 from app.services.authz import admin_required
 from app.services.user_service import (
-    email_existente,
+    email_ativo_existente,
     gerar_hash_senha,
     normalizar_email,
     normalizar_nome,
     normalizar_usuario,
     senha_confere,
-    username_existente,
+    usuario_inativo_por_username_ou_email,
+    username_ativo_existente,
     validar_dados_usuario,
 )
 
@@ -42,15 +43,76 @@ def register():
     form_data = {"username": username, "name": name, "email": email, "profile": profile}
 
     errors = validar_dados_usuario(username, name, email, profile, password)
-    if username and username_existente(username):
+    if username and username_ativo_existente(username):
         errors["username"] = "Já existe um usuário cadastrado com esse RE."
-    if email and email_existente(email):
+    if email and email_ativo_existente(email):
         errors["email"] = "Já existe um usuário cadastrado com esse e-mail."
 
     if errors:
         for message in errors.values():
             flash(message, "danger")
         return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors=errors)
+
+    inactive_matches = usuario_inativo_por_username_ou_email(username, email)
+    if len({user.id for user in inactive_matches}) > 1:
+        flash("O RE e o e-mail informados pertencem a cadastros inativos diferentes. Revise os dados antes de continuar.", "danger")
+        return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors={})
+
+    if inactive_matches:
+        user = inactive_matches[0]
+        previous_values = {
+            "username": user.username,
+            "name": user.name,
+            "email": user.email,
+            "profile": user.profile,
+            "is_active": user.is_active,
+            "is_temp_password": user.is_temp_password,
+            "must_change_password": user.must_change_password,
+            "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
+            "deleted_by_id": user.deleted_by_id,
+        }
+        user.username = username
+        user.name = name
+        user.email = email
+        user.profile = profile
+        user.is_active = True
+        user.is_temp_password = True
+        user.must_change_password = True
+        user.deleted_at = None
+        user.deleted_by_id = None
+        user.password = gerar_hash_senha(password)
+
+        try:
+            registrar_auditoria(
+                acao=AuditAction.ALTERAR_USUARIO,
+                modulo="Administração",
+                entidade="User",
+                entidade_id=user.id,
+                descricao=f"Usuário reativado: {username}",
+                alteracoes={
+                    "username": {"anterior": previous_values["username"], "novo": username},
+                    "name": {"anterior": previous_values["name"], "novo": name},
+                    "email": {"anterior": previous_values["email"], "novo": email},
+                    "profile": {"anterior": previous_values["profile"], "novo": profile},
+                    "is_active": {"anterior": previous_values["is_active"], "novo": True},
+                    "is_temp_password": {"anterior": previous_values["is_temp_password"], "novo": True},
+                    "must_change_password": {"anterior": previous_values["must_change_password"], "novo": True},
+                    "deleted_at": {"anterior": previous_values["deleted_at"], "novo": None},
+                    "deleted_by_id": {"anterior": previous_values["deleted_by_id"], "novo": None},
+                },
+                commit=False,
+                raise_on_error=True,
+            )
+            db.session.commit()
+        except IntegrityError as exc:
+            db.session.rollback()
+            current_app.logger.exception("Falha de integridade ao reativar usuário: %s", exc)
+            flash("Não foi possível reativar o usuário. O RE ou e-mail já está cadastrado.", "danger")
+            return render_template("users/register_user.html", title="Registro de usuário", form_data=form_data, errors={})
+
+        current_app.logger.info("%s reativou o usuário: %s", current_user.username, username)
+        flash("Usuário reativado com sucesso. A troca de senha será exigida no próximo acesso.", "success")
+        return redirect(url_for("admin.gestao_usuarios"))
 
     new_user = User(
         username=username,
