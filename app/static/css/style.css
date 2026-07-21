@@ -119,12 +119,12 @@ a:hover {
 }
 
 .app-logo {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
   border-radius: 50%;
   object-fit: cover;
-  background: #fff;
+  
 }
 
 .app-brand__name {
