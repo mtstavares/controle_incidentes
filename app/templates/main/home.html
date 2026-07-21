@@ -4,6 +4,21 @@
 {% block content %}
 {{ page_header('Painel inicial') }}
 
+<section class="app-card">
+    <div class="app-card__body">
+        <div class="row align-items-center g-4">
+            <div class="col-lg-3 text-center">
+                <img src="{{ url_for('static', filename='img/DivCiber.png') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 180px;">
+            </div>
+            <div class="col-lg-9">
+                
+                <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
+                <p class="h3 text-muted">O preço da liberdade é a eterna vigilância</p>
+            </div>
+        </div>
+    </div>
+</section>
+
 <section class="metric-grid-incidentes" aria-label="Atalhos principais">
     <article class="metric-card">
         <p class="metric-card__label">Operação</p>
@@ -29,18 +44,5 @@
     {% endif %}
 </section>
 
-<section class="app-card">
-    <div class="app-card__body">
-        <div class="row align-items-center g-4">
-            <div class="col-lg-3 text-center">
-                <img src="{{ url_for('static', filename='img/logo_divciber.jpg') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 180px;">
-            </div>
-            <div class="col-lg-9">
-                
-                <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
-                <p class="h3 text-muted">O preço da liberdade é a eterna vigilância</p>
-            </div>
-        </div>
-    </div>
-</section>
+
 {% endblock %}
