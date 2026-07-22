@@ -151,7 +151,7 @@ def choose_largest_image(zip_file, targets):
 
 def render_slides_with_powerpoint(pptx_path, slide_indices, output_dir):
     if os.name != "nt":
-        raise RuntimeError("Renderização de slide completo requer PowerPoint no Windows ou uso do modo legado.")
+        raise RuntimeError("Renderização via PowerPoint está disponível apenas no Windows.")
 
     script = """
 param(
@@ -209,6 +209,80 @@ finally {
         Path(script_path).unlink(missing_ok=True)
 
 
+def _find_required_command(candidates, package_hint):
+    for candidate in candidates:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    names = ", ".join(candidates)
+    raise RuntimeError(f"Comando obrigatório não encontrado ({names}). Instale {package_hint}.")
+
+
+def _converted_pdf_path(output_dir, pptx_path):
+    preferred = output_dir / f"{pptx_path.stem}.pdf"
+    if preferred.exists():
+        return preferred
+    pdf_files = sorted(output_dir.glob("*.pdf"), key=lambda item: item.stat().st_mtime, reverse=True)
+    if not pdf_files:
+        raise RuntimeError("LibreOffice não gerou o PDF intermediário do PPTX.")
+    return pdf_files[0]
+
+
+def render_slides_with_libreoffice(pptx_path, slide_indices, output_dir):
+    soffice = _find_required_command(["soffice", "libreoffice"], "LibreOffice")
+    pdftoppm = _find_required_command(["pdftoppm"], "poppler-utils")
+
+    with tempfile.TemporaryDirectory(prefix="awareness-pdf-") as pdf_temp_dir:
+        pdf_dir = Path(pdf_temp_dir)
+        subprocess.run(
+            [
+                soffice,
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(pdf_dir),
+                str(pptx_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        pdf_path = _converted_pdf_path(pdf_dir, pptx_path)
+
+        for slide_index in slide_indices:
+            prefix = output_dir / f"slide_{slide_index:03}"
+            subprocess.run(
+                [
+                    pdftoppm,
+                    "-f",
+                    str(slide_index),
+                    "-l",
+                    str(slide_index),
+                    "-png",
+                    "-r",
+                    "144",
+                    str(pdf_path),
+                    str(prefix),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            generated = output_dir / f"slide_{slide_index:03}-1.png"
+            final_path = output_dir / f"slide_{slide_index:03}.png"
+            if not generated.exists():
+                raise RuntimeError(f"Poppler não gerou a imagem do slide {slide_index}.")
+            generated.replace(final_path)
+
+
+def render_slides(pptx_path, slide_indices, output_dir):
+    if os.name == "nt":
+        render_slides_with_powerpoint(pptx_path, slide_indices, output_dir)
+    else:
+        render_slides_with_libreoffice(pptx_path, slide_indices, output_dir)
+
+
 def iter_rendered_slide_campaigns(pptx_path):
     with zipfile.ZipFile(pptx_path) as zip_file:
         index_by_slide_id = slide_id_to_index(zip_file)
@@ -224,7 +298,7 @@ def iter_rendered_slide_campaigns(pptx_path):
 
     with tempfile.TemporaryDirectory(prefix="awareness-slides-") as temp_dir:
         output_dir = Path(temp_dir)
-        render_slides_with_powerpoint(pptx_path, slide_indices, output_dir)
+        render_slides(pptx_path, slide_indices, output_dir)
         for spec in specs:
             image_path = output_dir / f"slide_{spec['slide_index']:03}.png"
             if not image_path.exists() or image_path.stat().st_size <= 0:
