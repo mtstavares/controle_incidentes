@@ -9,6 +9,8 @@ WORKDIR /app
 # Instala dependências do sistema necessárias para o SQLite e compilação
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libreoffice \
+    poppler-utils \
     python3-dev \
     tzdata \
     && rm -rf /var/lib/apt/lists/*

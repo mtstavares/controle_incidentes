@@ -35,6 +35,8 @@ static/uploads/
 instance/uploads/conscientizacoes/
 logs/
 *.log
+runtime_exports/
+*.awareness.zip
 
 # Segredos e variáveis de ambiente
 .env
