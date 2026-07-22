@@ -51,17 +51,18 @@ MIME_BY_EXTENSION = {
     ".webp": "image/webp",
 }
 ALLOWED_MIME_TYPES = set(MIME_BY_EXTENSION.values())
+JPEG_MIME_ALIASES = {"image/jpeg", "image/jpg", "image/pjpeg", "image/x-citrix-jpeg"}
 MIME_ALIASES_BY_EXTENSION = {
     ".apng": {"image/apng", "image/png"},
     ".bmp": {"image/bmp", "image/x-ms-bmp"},
     ".dib": {"image/bmp", "image/x-ms-bmp"},
     ".ico": {"image/vnd.microsoft.icon", "image/x-icon", "image/icon"},
-    ".jpe": {"image/jpeg", "image/pjpeg"},
-    ".jpeg": {"image/jpeg", "image/pjpeg"},
-    ".jfif": {"image/jpeg", "image/pjpeg"},
-    ".jpg": {"image/jpeg", "image/pjpeg"},
-    ".pjp": {"image/jpeg", "image/pjpeg"},
-    ".pjpeg": {"image/jpeg", "image/pjpeg"},
+    ".jpe": JPEG_MIME_ALIASES,
+    ".jpeg": JPEG_MIME_ALIASES,
+    ".jfif": JPEG_MIME_ALIASES,
+    ".jpg": JPEG_MIME_ALIASES,
+    ".pjp": JPEG_MIME_ALIASES,
+    ".pjpeg": JPEG_MIME_ALIASES,
 }
 
 
@@ -70,10 +71,12 @@ class AwarenessImageValidationError(ValueError):
 
 
 def get_awareness_upload_folder():
-    folder = Path(current_app.config.get(
-        "AWARENESS_UPLOAD_FOLDER",
-        Path(current_app.instance_path) / "uploads" / "conscientizacoes",
-    ))
+    folder = Path(
+        current_app.config.get(
+            "AWARENESS_UPLOAD_FOLDER",
+            Path(current_app.instance_path) / "uploads" / "conscientizacoes",
+        )
+    )
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -124,7 +127,7 @@ def _looks_like_png(data):
 
 
 def _looks_like_jpeg(data):
-    return data.startswith(b"\xff\xd8\xff") and data.endswith(b"\xff\xd9") and len(data) > 20
+    return data.startswith(b"\xff\xd8\xff") and b"\xff\xd9" in data[-32:] and len(data) > 20
 
 
 def _looks_like_gif(data):
