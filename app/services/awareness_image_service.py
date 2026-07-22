@@ -6,14 +6,63 @@ from flask import current_app
 from werkzeug.utils import secure_filename
 
 
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+ALLOWED_IMAGE_EXTENSIONS = {
+    ".apng",
+    ".avif",
+    ".bmp",
+    ".dib",
+    ".gif",
+    ".heic",
+    ".heics",
+    ".heif",
+    ".heifs",
+    ".ico",
+    ".jpe",
+    ".jpeg",
+    ".jfif",
+    ".jpg",
+    ".pjp",
+    ".pjpeg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 MIME_BY_EXTENSION = {
+    ".apng": "image/apng",
+    ".avif": "image/avif",
+    ".bmp": "image/bmp",
+    ".dib": "image/bmp",
+    ".gif": "image/gif",
+    ".heic": "image/heic",
+    ".heics": "image/heic",
+    ".heif": "image/heif",
+    ".heifs": "image/heif",
+    ".ico": "image/vnd.microsoft.icon",
+    ".jpe": "image/jpeg",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
+    ".jfif": "image/jpeg",
+    ".pjp": "image/jpeg",
+    ".pjpeg": "image/jpeg",
     ".png": "image/png",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
     ".webp": "image/webp",
 }
 ALLOWED_MIME_TYPES = set(MIME_BY_EXTENSION.values())
+MIME_ALIASES_BY_EXTENSION = {
+    ".apng": {"image/apng", "image/png"},
+    ".bmp": {"image/bmp", "image/x-ms-bmp"},
+    ".dib": {"image/bmp", "image/x-ms-bmp"},
+    ".ico": {"image/vnd.microsoft.icon", "image/x-icon", "image/icon"},
+    ".jpe": {"image/jpeg", "image/pjpeg"},
+    ".jpeg": {"image/jpeg", "image/pjpeg"},
+    ".jfif": {"image/jpeg", "image/pjpeg"},
+    ".jpg": {"image/jpeg", "image/pjpeg"},
+    ".pjp": {"image/jpeg", "image/pjpeg"},
+    ".pjpeg": {"image/jpeg", "image/pjpeg"},
+}
 
 
 class AwarenessImageValidationError(ValueError):
@@ -59,9 +108,9 @@ def _validate_extension(filename):
 
 
 def _validate_mime(storage, extension):
-    expected_mime = MIME_BY_EXTENSION[extension]
+    expected_mimes = MIME_ALIASES_BY_EXTENSION.get(extension, {MIME_BY_EXTENSION[extension]})
     supplied_mime = (storage.mimetype or "").lower()
-    if supplied_mime not in ALLOWED_MIME_TYPES or supplied_mime != expected_mime:
+    if supplied_mime not in expected_mimes:
         raise AwarenessImageValidationError("Tipo MIME da imagem não corresponde ao formato permitido.")
 
 
@@ -78,6 +127,38 @@ def _looks_like_jpeg(data):
     return data.startswith(b"\xff\xd8\xff") and data.endswith(b"\xff\xd9") and len(data) > 20
 
 
+def _looks_like_gif(data):
+    return data.startswith((b"GIF87a", b"GIF89a")) and len(data) > 20
+
+
+def _looks_like_bmp(data):
+    return data.startswith(b"BM") and len(data) > 26
+
+
+def _looks_like_tiff(data):
+    return data.startswith((b"II*\x00", b"MM\x00*")) and len(data) > 8
+
+
+def _looks_like_ico(data):
+    return data.startswith(b"\x00\x00\x01\x00") and len(data) > 22
+
+
+def _looks_like_isobmff(data, brands):
+    if len(data) < 16 or data[4:8] != b"ftyp":
+        return False
+    major_brand = data[8:12]
+    compatible_brands = data[16:64]
+    return major_brand in brands or any(brand in compatible_brands for brand in brands)
+
+
+def _looks_like_avif(data):
+    return _looks_like_isobmff(data, {b"avif", b"avis"})
+
+
+def _looks_like_heif(data):
+    return _looks_like_isobmff(data, {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"})
+
+
 def _looks_like_webp(data):
     return (
         data.startswith(b"RIFF")
@@ -89,9 +170,25 @@ def _looks_like_webp(data):
 
 def _validate_content(data, extension):
     validators = {
+        ".apng": _looks_like_png,
+        ".avif": _looks_like_avif,
+        ".bmp": _looks_like_bmp,
+        ".dib": _looks_like_bmp,
+        ".gif": _looks_like_gif,
+        ".heic": _looks_like_heif,
+        ".heics": _looks_like_heif,
+        ".heif": _looks_like_heif,
+        ".heifs": _looks_like_heif,
+        ".ico": _looks_like_ico,
+        ".jpe": _looks_like_jpeg,
         ".png": _looks_like_png,
         ".jpg": _looks_like_jpeg,
         ".jpeg": _looks_like_jpeg,
+        ".jfif": _looks_like_jpeg,
+        ".pjp": _looks_like_jpeg,
+        ".pjpeg": _looks_like_jpeg,
+        ".tif": _looks_like_tiff,
+        ".tiff": _looks_like_tiff,
         ".webp": _looks_like_webp,
     }
     if not validators[extension](data):

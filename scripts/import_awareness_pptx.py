@@ -19,7 +19,7 @@ load_dotenv()
 
 from app import create_app, db
 from app.models import ConscientizacaoCampanha
-from app.services.awareness_image_service import get_awareness_upload_folder
+from app.services.awareness_image_service import MIME_BY_EXTENSION, get_awareness_upload_folder
 from app.services.timezone_service import utc_now
 from config import DevelopmentConfig
 
@@ -46,12 +46,7 @@ MONTHS = {
     "DEZ": 12,
 }
 
-IMAGE_MIME = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-}
+IMAGE_MIME = MIME_BY_EXTENSION
 
 
 def normalize_text(value):

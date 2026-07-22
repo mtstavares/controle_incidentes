@@ -14,6 +14,10 @@ PNG_1X1 = (
     b"\x00\x00\x00\nIDATx\x9cc\xf8\x0f\x00\x01\x01\x01\x00"
     b"\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
 )
+GIF_1X1 = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff,"
+    b"\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
 
 
 class TestConfig:
@@ -136,7 +140,7 @@ class ConscientizacoesTest(unittest.TestCase):
             data={
                 "titulo": "Formato ruim",
                 "data_publicacao": "2026-07-22",
-                "imagem": self.image_file(filename="arquivo.gif", mime="image/gif"),
+                "imagem": self.image_file(filename="arquivo.svg", content=b"<svg></svg>", mime="image/svg+xml"),
             },
             content_type="multipart/form-data",
             follow_redirects=True,
@@ -155,6 +159,24 @@ class ConscientizacoesTest(unittest.TestCase):
         )
         self.assertIn("Imagem inválida ou corrompida".encode("utf-8"), renamed_payload.data)
         self.assertEqual(ConscientizacaoCampanha.query.count(), 0)
+
+    def test_additional_image_extensions_are_accepted(self):
+        self.login("admin")
+        response = self.client.post(
+            "/conscientizacoes",
+            data={
+                "titulo": "Campanha GIF",
+                "data_publicacao": "2026-07-22",
+                "imagem": self.image_file(filename="campanha.gif", content=GIF_1X1, mime="image/gif"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        campaign = ConscientizacaoCampanha.query.filter_by(titulo="Campanha GIF").first()
+        self.assertIsNotNone(campaign)
+        self.assertEqual(campaign.imagem_mime_type, "image/gif")
 
     def test_file_above_limit_is_rejected(self):
         self.app.config["MAX_AWARENESS_IMAGE_SIZE"] = 10
