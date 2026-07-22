@@ -165,6 +165,8 @@ def parse_collection_date(value):
     raw_value = str(value).strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_value):
         parsed = pd.to_datetime(raw_value, errors="coerce", format="%Y-%m-%d")
+    elif re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", raw_value):
+        parsed = pd.to_datetime(raw_value, errors="coerce", format="%Y-%m-%d %H:%M:%S")
     else:
         parsed = pd.to_datetime(raw_value, errors="coerce", dayfirst=True)
     if pd.isna(parsed):

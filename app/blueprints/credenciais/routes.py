@@ -1,16 +1,13 @@
-from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+from flask import jsonify, render_template, request
+from flask_login import login_required
 from sqlalchemy import func
 
 from app import db
 from app.blueprints.credenciais import credenciais_bp
 from app.models import CredencialComprometida
-from app.services.audit_service import AuditAction, registrar_auditoria
-from app.services.authz import admin_required
 from app.services.credential_service import (
     apply_credential_filters,
     credential_to_table_dict,
-    import_credential_spreadsheet,
     order_credentials,
 )
 
@@ -99,53 +96,3 @@ def listar_credenciais_api():
             "direction": direction,
         },
     })
-
-
-@credenciais_bp.route("/credenciais-comprometidas/importar", methods=["POST"])
-@admin_required
-def importar_credenciais():
-    upload = request.files.get("arquivo")
-    if not upload:
-        flash("Selecione uma planilha Excel para importar.", "danger")
-        return redirect(url_for("credenciais.listar_credenciais"))
-
-    try:
-        summary = import_credential_spreadsheet(upload, user_id=current_user.id)
-        registrar_auditoria(
-            acao=AuditAction.IMPORTAR_CREDENCIAIS,
-            modulo="Credenciais comprometidas",
-            entidade="CredencialComprometida",
-            descricao="Importação de credenciais comprometidas concluída.",
-            alteracoes={
-                "total_linhas": {"anterior": None, "novo": summary.total_rows},
-                "importadas": {"anterior": None, "novo": summary.imported},
-                "atualizadas": {"anterior": None, "novo": summary.updated},
-                "rejeitadas": {"anterior": None, "novo": summary.rejected},
-                "coluna_senha_ignorada": {"anterior": None, "novo": summary.ignored_password_column},
-                "erros": {"anterior": None, "novo": summary.errors[:20]},
-            },
-            commit=False,
-            raise_on_error=True,
-        )
-        db.session.commit()
-        flash(
-            f"Importação concluída: {summary.imported} importadas, {summary.updated} atualizadas e {summary.rejected} rejeitadas.",
-            "success",
-        )
-    except ValueError as exc:
-        db.session.rollback()
-        registrar_auditoria(
-            acao=AuditAction.IMPORTAR_CREDENCIAIS,
-            modulo="Credenciais comprometidas",
-            entidade="CredencialComprometida",
-            descricao="Importação de credenciais comprometidas rejeitada por validação.",
-            alteracoes={"erro": {"anterior": None, "novo": str(exc)}},
-            resultado="FALHA",
-        )
-        flash(str(exc), "danger")
-    except Exception as exc:
-        db.session.rollback()
-        current_app.logger.exception("Falha inesperada ao importar credenciais: %s", exc)
-        flash("Não foi possível importar a planilha de credenciais.", "danger")
-
-    return redirect(url_for("credenciais.listar_credenciais"))

@@ -6,7 +6,7 @@ import pandas as pd
 from werkzeug.datastructures import FileStorage
 
 from app import create_app, db, hash
-from app.models import AuditLog, CredencialComprometida, User
+from app.models import CredencialComprometida, User
 from app.services.credential_service import import_credential_spreadsheet, is_valid_cpf, normalize_cpf
 
 
@@ -90,23 +90,18 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertNotIn("SuperSecreta", str(record.__dict__))
 
     def test_route_import_audits_summary_without_password_content(self):
-        self.login()
         with patch("app.services.credential_service._read_spreadsheet", return_value=self.valid_dataframe()):
-            response = self.client.post(
-                "/credenciais-comprometidas/importar",
-                data={"arquivo": (BytesIO(b"fake excel"), "credenciais.xlsx")},
-                content_type="multipart/form-data",
-                follow_redirects=True,
-            )
+            summary = import_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
 
+        self.assertEqual(summary.imported, 1)
+        self.login()
+        response = self.client.get("/credenciais-comprometidas")
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("SuperSecreta", html)
-        audit = AuditLog.query.filter_by(acao="IMPORTAR_CREDENCIAIS").first()
-        self.assertIsNotNone(audit)
-        self.assertNotIn("SuperSecreta", str(audit.alteracoes))
 
-    def test_user_cannot_import_but_can_view(self):
+    def test_manual_import_route_is_not_exposed_to_users(self):
         self.login("user", "user123")
         self.assertEqual(self.client.get("/credenciais-comprometidas").status_code, 200)
         response = self.client.post(
@@ -114,16 +109,13 @@ class CompromisedCredentialsTest(unittest.TestCase):
             data={"arquivo": (BytesIO(b"fake excel"), "credenciais.xlsx")},
             content_type="multipart/form-data",
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
 
     def test_api_filters_search_access_period_and_situation(self):
         self.login()
         with patch("app.services.credential_service._read_spreadsheet", return_value=self.valid_dataframe()):
-            self.client.post(
-                "/credenciais-comprometidas/importar",
-                data={"arquivo": (BytesIO(b"fake excel"), "credenciais.xlsx")},
-                content_type="multipart/form-data",
-            )
+            import_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
 
         response = self.client.get(
             "/api/credenciais-comprometidas?q=529.982&access=somente_ad&start_date=2026-07-01&end_date=2026-07-31&situacao=bloqueado"

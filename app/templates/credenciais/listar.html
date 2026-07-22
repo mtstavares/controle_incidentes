@@ -2,30 +2,7 @@
 {% from 'components/macros.html' import page_header, empty_state %}
 
 {% block content %}
-{{ page_header('Credenciais comprometidas', 'Consulta segura de credenciais expostas importadas de planilhas validadas.') }}
-
-{% if current_user.profile == 'Admin' %}
-<section class="app-card mb-4" aria-labelledby="credential-import-title">
-    <div class="app-card__header">
-        <div>
-            <h2 id="credential-import-title" class="h5 mb-1">Importar planilha</h2>
-            <p class="text-muted mb-0">A coluna SENHA, caso exista, é descartada antes de qualquer processamento.</p>
-        </div>
-    </div>
-    <div class="app-card__body">
-        <form method="POST" action="{{ url_for('credenciais.importar_credenciais') }}" enctype="multipart/form-data" class="filter-grid" data-prevent-duplicate>
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <div class="span-8">
-                <label class="form-label" for="arquivo">Planilha Excel</label>
-                <input class="form-control" id="arquivo" type="file" name="arquivo" accept=".xlsx,.xls" required>
-            </div>
-            <div class="span-4 d-flex align-items-end">
-                <button class="btn btn-primary w-100" type="submit" data-loading-text="Importando...">Importar credenciais</button>
-            </div>
-        </form>
-    </div>
-</section>
-{% endif %}
+{{ page_header('Credenciais comprometidas', 'Consulta segura de credenciais expostas consolidadas pela DivCiber.') }}
 
 <section class="app-card mb-4" aria-labelledby="credential-filter-title">
     <div class="app-card__header">
