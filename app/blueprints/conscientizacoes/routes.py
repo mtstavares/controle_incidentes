@@ -21,6 +21,7 @@ from app.services.timezone_service import local_now, parse_iso_date
 WRITE_PROFILES = {"Admin", "User"}
 VIEW_PROFILES = {"Admin", "User", "Viewer"}
 TITLE_MAX_LENGTH = 150
+SEARCH_MAX_LENGTH = 80
 
 
 def _current_profile():
@@ -70,6 +71,43 @@ def _parse_publication_date(value):
     return parsed
 
 
+def _parse_optional_filter_date(value, field_name):
+    if not value:
+        return None
+    try:
+        return parse_iso_date(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Informe uma data válida para {field_name}.") from None
+
+
+def _filtered_campaign_query(args):
+    search_term = re.sub(r"\s+", " ", (args.get("q") or "").strip())
+    if len(search_term) > SEARCH_MAX_LENGTH:
+        raise ValueError("O termo de pesquisa é muito longo.")
+
+    start_date = _parse_optional_filter_date(args.get("start_date"), "o período inicial")
+    end_date = _parse_optional_filter_date(args.get("end_date"), "o período final")
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("A data inicial não pode ser posterior à data final.")
+
+    query = ConscientizacaoCampanha.query
+    if search_term:
+        query = query.filter(ConscientizacaoCampanha.titulo.ilike(f"%{search_term}%"))
+    if start_date:
+        query = query.filter(ConscientizacaoCampanha.data_publicacao >= start_date)
+    if end_date:
+        query = query.filter(ConscientizacaoCampanha.data_publicacao <= end_date)
+
+    return (
+        query
+        .order_by(
+            ConscientizacaoCampanha.data_publicacao.desc(),
+            ConscientizacaoCampanha.id.desc(),
+        )
+        .all()
+    )
+
+
 def _audit_campaign(action, campaign, description, changes=None, result="SUCESSO", commit=True):
     return registrar_auditoria(
         acao=action,
@@ -87,21 +125,43 @@ def _audit_campaign(action, campaign, description, changes=None, result="SUCESSO
 @login_required
 def listar_conscientizacoes():
     _require_view_permission()
-    campanhas = (
-        ConscientizacaoCampanha.query
-        .order_by(
-            ConscientizacaoCampanha.data_publicacao.desc(),
-            ConscientizacaoCampanha.id.desc(),
-        )
-        .all()
-    )
+    error_message = None
+    try:
+        campanhas = _filtered_campaign_query(request.args)
+    except ValueError as exc:
+        campanhas = []
+        error_message = str(exc)
+
     return render_template(
         "conscientizacoes/listar.html",
         title="Conscientizações",
         campanhas=campanhas,
         can_manage=_current_profile() in WRITE_PROFILES,
         today=local_now().date().isoformat(),
+        filtros=request.args,
+        error_message=error_message,
     )
+
+
+@conscientizacoes_bp.route("/api/conscientizacoes", methods=["GET"])
+@login_required
+def listar_conscientizacoes_api():
+    _require_view_permission()
+    try:
+        campanhas = _filtered_campaign_query(request.args)
+        error_message = None
+        status_code = 200
+    except ValueError as exc:
+        campanhas = []
+        error_message = str(exc)
+        status_code = 400
+
+    return render_template(
+        "conscientizacoes/_campaign_grid.html",
+        campanhas=campanhas,
+        can_manage=_current_profile() in WRITE_PROFILES,
+        error_message=error_message,
+    ), status_code
 
 
 @conscientizacoes_bp.route("/conscientizacoes", methods=["POST"])

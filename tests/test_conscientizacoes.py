@@ -173,6 +173,25 @@ class ConscientizacoesTest(unittest.TestCase):
         self.assertLess(response.data.index(b"Mais recente"), response.data.index(b"Mais antiga"))
         self.assertIn(b"data-awareness-open=\"awareness-view-", response.data)
 
+    def test_dynamic_search_by_title_and_period(self):
+        self.login("admin")
+        self.create_campaign(title="Uso do software antivírus", date="2025-01-06")
+        self.create_campaign(title="Golpe do amor", date="2025-08-18", filename="amor.png")
+
+        title_response = self.client.get("/api/conscientizacoes?q=antiv%C3%ADrus")
+        self.assertEqual(title_response.status_code, 200)
+        self.assertIn("Uso do software antivírus".encode("utf-8"), title_response.data)
+        self.assertNotIn("Golpe do amor".encode("utf-8"), title_response.data)
+
+        period_response = self.client.get("/api/conscientizacoes?start_date=2025-08-01&end_date=2025-08-31")
+        self.assertEqual(period_response.status_code, 200)
+        self.assertIn("Golpe do amor".encode("utf-8"), period_response.data)
+        self.assertNotIn("Uso do software antivírus".encode("utf-8"), period_response.data)
+
+        invalid_response = self.client.get("/api/conscientizacoes?start_date=2025-09-01&end_date=2025-08-01")
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertIn("A data inicial não pode ser posterior".encode("utf-8"), invalid_response.data)
+
     def test_admin_can_edit_replace_image_and_delete_campaign(self):
         self.login("admin")
         self.create_campaign()
