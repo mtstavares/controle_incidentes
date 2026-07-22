@@ -19,6 +19,7 @@ ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 MAX_SPREADSHEET_SIZE = 10 * 1024 * 1024
 MAX_SEARCH_LENGTH = 80
 ACCESS_FILTERS = {"", "somente_ad", "somente_ms", "ad_ms", "nenhum", "alguma_aplicacao"}
+EMAIL_NOT_FOUND = "e-mail não localizado"
 ORDER_FIELDS = {
     "data_coleta": CredencialComprometida.data_coleta,
     "nome": CredencialComprometida.nome_busca,
@@ -211,6 +212,8 @@ def _row_value(row, key):
 def _build_record(row):
     cpf = normalize_cpf(_row_value(row, "cpf"))
     email = normalize_email(_row_value(row, "email"))
+    if not email:
+        email = EMAIL_NOT_FOUND
     nome = normalize_text(_row_value(row, "nome"), max_length=255)
     data_coleta = parse_collection_date(_row_value(row, "data_coleta"))
     acesso_ad = normalize_bool(_row_value(row, "acesso_ad"))
@@ -223,7 +226,7 @@ def _build_record(row):
         errors.append("nome ausente")
     if not is_valid_cpf(cpf):
         errors.append("CPF inválido")
-    if not is_valid_email(email):
+    if email != EMAIL_NOT_FOUND and not is_valid_email(email):
         errors.append("e-mail inválido")
     if not data_coleta:
         errors.append("data de coleta inválida")

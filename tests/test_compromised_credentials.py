@@ -161,6 +161,17 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertEqual(summary.rejected, 1)
         self.assertEqual(CredencialComprometida.query.count(), 1)
 
+    def test_missing_email_is_persisted_as_not_found(self):
+        df = self.valid_dataframe()
+        df.loc[0, "EMAIL"] = ""
+        with patch("app.services.credential_service._read_spreadsheet", return_value=df):
+            summary = import_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+
+        self.assertEqual(summary.imported, 1)
+        self.assertEqual(summary.rejected, 0)
+        self.assertEqual(CredencialComprometida.query.one().email, "e-mail não localizado")
+
     def test_cpf_normalization_and_validation(self):
         self.assertEqual(normalize_cpf("052.998.224-725"), "052998224725")
         self.assertTrue(is_valid_cpf("52998224725"))

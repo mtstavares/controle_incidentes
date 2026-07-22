@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 load_dotenv()
 
 from app import create_app, db
-from app.models import User
+from app.models import CredencialComprometida, User
 from app.services.audit_service import AuditAction, registrar_auditoria
 from app.services.credential_service import import_credential_spreadsheet
 from config import DevelopmentConfig
@@ -33,6 +33,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Popula credenciais comprometidas a partir de planilha Excel.")
     parser.add_argument("--file", required=True, help="Caminho absoluto ou relativo da planilha .xlsx/.xls.")
     parser.add_argument("--user", default="system", help="Usuario responsavel pela carga para auditoria.")
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Remove os registros atuais de credenciais antes da carga. Nao altera outras tabelas.",
+    )
     return parser.parse_args()
 
 
@@ -46,6 +51,10 @@ def main():
     with app.app_context():
         db.create_all()
         actor = User.query.filter_by(username=args.user, is_active=True).first()
+        removed = 0
+        if args.replace:
+            removed = CredencialComprometida.query.delete()
+            db.session.flush()
 
         with spreadsheet.open("rb") as file_obj:
             storage = FileStorage(stream=file_obj, filename=spreadsheet.name)
@@ -61,6 +70,7 @@ def main():
                 "importadas": {"anterior": None, "novo": summary.imported},
                 "atualizadas": {"anterior": None, "novo": summary.updated},
                 "rejeitadas": {"anterior": None, "novo": summary.rejected},
+                "removidas_antes_da_carga": {"anterior": None, "novo": removed},
                 "coluna_senha_ignorada": {"anterior": None, "novo": summary.ignored_password_column},
                 "erros": {"anterior": None, "novo": summary.errors[:50]},
             },
@@ -75,6 +85,8 @@ def main():
         print(f"Importadas: {summary.imported}")
         print(f"Atualizadas: {summary.updated}")
         print(f"Rejeitadas: {summary.rejected}")
+        if args.replace:
+            print(f"Registros removidos antes da carga: {removed}")
         print(f"Coluna SENHA ignorada: {'sim' if summary.ignored_password_column else 'nao'}")
         if summary.errors:
             print("Primeiros erros de validacao, sem dados sensiveis:")
