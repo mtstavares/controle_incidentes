@@ -374,6 +374,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 const column = document.createElement('div');
                 column.className = 'credential-column-chart__item';
 
+                const value = document.createElement('span');
+                value.className = 'credential-column-chart__value';
+                value.textContent = item.total;
+
                 const bar = document.createElement('div');
                 bar.className = 'credential-column-chart__bar';
                 const height = maxTotal > 0 ? Math.max((item.total / maxTotal) * 100, item.total > 0 ? 5 : 0) : 0;
@@ -382,16 +386,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 bar.title = item.monthName + ' de ' + item.year + ': ' + item.total + ' credenciais';
                 bar.setAttribute('aria-label', bar.title);
 
-                const value = document.createElement('span');
-                value.className = 'credential-column-chart__value';
-                value.textContent = item.total;
-                bar.appendChild(value);
-
                 const label = document.createElement('span');
                 label.className = 'credential-column-chart__label';
                 label.textContent = item.monthName.slice(0, 3);
                 label.title = item.monthName;
 
+                column.appendChild(value);
                 column.appendChild(bar);
                 column.appendChild(label);
                 columns.appendChild(column);
