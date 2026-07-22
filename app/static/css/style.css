@@ -1068,7 +1068,18 @@ h1 {
   align-items: end;
 }
 
+.netbox-search-form {
+  align-items: end;
+}
+
 .pm-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.netbox-result-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
@@ -1083,9 +1094,52 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
+.netbox-card {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
 .pm-card h2 {
   margin-bottom: var(--space-4);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.netbox-card h2 {
+  margin-bottom: var(--space-4);
   font-size: 1.05rem;
+}
+
+.netbox-result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  margin-top: var(--space-5);
+  color: var(--color-text-muted);
+}
+
+.netbox-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.netbox-list__item {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.netbox-list__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.netbox-list__item h3 {
+  margin-bottom: var(--space-3);
+  font-size: 1rem;
 }
 
 .pm-card--identity {
@@ -1665,6 +1719,7 @@ h1 {
   }
 
   .pm-result-grid,
+  .netbox-result-grid,
   .pm-card--identity,
   .pm-detail-list {
     grid-template-columns: 1fr;

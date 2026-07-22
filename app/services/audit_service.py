@@ -109,6 +109,12 @@ AUDITABLE_FIELDS = {
         "query_masked",
         "elapsed_ms",
     },
+    "ConsultaNetBox": {
+        "query_kind",
+        "query_masked",
+        "elapsed_ms",
+        "result_count",
+    },
 }
 
 SENSITIVE_KEYS = {

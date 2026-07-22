@@ -129,6 +129,32 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    document.querySelectorAll('[data-netbox-ip-search-form]').forEach(function (form) {
+        const input = form.querySelector('input[name="query"]');
+        if (!input) return;
+
+        const sanitize = function () {
+            input.value = input.value.replace(/[^0-9a-fA-F:.]/g, '').slice(0, 45);
+        };
+
+        input.addEventListener('input', sanitize);
+        input.addEventListener('paste', function () {
+            window.setTimeout(sanitize, 0);
+        });
+
+        form.addEventListener('submit', function (event) {
+            sanitize();
+            if (!input.value.trim()) {
+                event.preventDefault();
+                showApplicationNotification('IP inválido.', 'danger');
+                return;
+            }
+            window.setTimeout(function () {
+                input.value = '';
+            }, 0);
+        });
+    });
+
     const commandSelect = document.querySelector('[data-command-select]');
     const btlSelect = document.getElementById('btl_select');
     const cpaInput = document.getElementById('cpa_input');
