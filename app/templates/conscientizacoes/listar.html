@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header %}
+
+{% block content %}
+{{ page_header('Conscientizações', 'Campanhas de phishing e materiais de orientação publicados pela equipe.') }}
+
+{% if can_manage %}
+<section class="app-card mb-4" aria-labelledby="awareness-form-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="awareness-form-title" class="h5 mb-1">Nova campanha</h2>
+            <p class="text-muted mb-0">Cadastre título, imagem e data de publicação.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form method="POST" action="{{ url_for('conscientizacoes.criar_conscientizacao') }}" enctype="multipart/form-data" data-prevent-duplicate>
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5">
+                    <label class="form-label" for="titulo">Título <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="titulo" name="titulo" maxlength="150" required>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="data_publicacao">Data de publicação <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="data_publicacao" name="data_publicacao" type="date" value="{{ today }}" required>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="imagem">Imagem <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="imagem" name="imagem" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>
+                </div>
+                <div class="col-lg-1">
+                    <button class="btn btn-primary w-100" type="submit" data-loading-text="Salvando...">Salvar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+<section class="app-card mb-4" aria-labelledby="awareness-search-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="awareness-search-title" class="h5 mb-1">Pesquisar conscientizações</h2>
+            <p class="text-muted mb-0">Consulte pelo título e filtre por período de publicação.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="{{ url_for('conscientizacoes.listar_conscientizacoes') }}">Limpar filtros</a>
+    </div>
+    <div class="app-card__body">
+        <form method="GET" action="{{ url_for('conscientizacoes.listar_conscientizacoes') }}" data-awareness-search data-endpoint="{{ url_for('conscientizacoes.listar_conscientizacoes_api') }}">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-6">
+                    <label class="form-label" for="awareness_q">Título</label>
+                    <input class="form-control" id="awareness_q" name="q" type="search" maxlength="80" value="{{ filtros.get('q', '') }}" placeholder="Pesquisar por título" autocomplete="off" data-awareness-search-input>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="awareness_start">Período inicial</label>
+                    <input class="form-control" id="awareness_start" name="start_date" type="date" value="{{ filtros.get('start_date', '') }}" data-awareness-search-input>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="awareness_end">Período final</label>
+                    <input class="form-control" id="awareness_end" name="end_date" type="date" value="{{ filtros.get('end_date', '') }}" data-awareness-search-input>
+                </div>
+            </div>
+        </form>
+    </div>
+</section>
+
+<div data-awareness-results aria-live="polite" aria-busy="false">
+    {% include "conscientizacoes/_campaign_grid.html" %}
+</div>
+{% endblock %}

@@ -215,6 +215,23 @@ class CredencialComprometida(TimestampMixin, db.Model):
         return f"<CredencialComprometida {self.id} - {self.cpf}>"
 
 
+class ConscientizacaoCampanha(TimestampMixin, db.Model):
+    __tablename__ = "conscientizacao_campanhas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(150), nullable=False, index=True)
+    imagem_arquivo = db.Column(db.String(255), nullable=False, unique=True)
+    imagem_mime_type = db.Column(db.String(50), nullable=False)
+    imagem_tamanho = db.Column(db.BigInteger, nullable=False)
+    data_publicacao = db.Column(db.Date, nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+
+    created_by = db.relationship("User", backref="conscientizacoes_criadas")
+
+    def __repr__(self):
+        return f"<ConscientizacaoCampanha {self.id} - {self.titulo}>"
+
+
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
 

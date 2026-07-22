@@ -736,4 +736,108 @@ document.addEventListener('DOMContentLoaded', function () {
             window.addIncidentAttachmentFiles(event.dataTransfer.files);
         });
     });
+
+    function bindAwarenessDialogs(root) {
+        root.querySelectorAll('[data-awareness-open]').forEach(function (button) {
+            if (button.dataset.awarenessBound === 'true') return;
+            button.dataset.awarenessBound = 'true';
+            button.addEventListener('click', function () {
+                const dialog = document.getElementById(button.dataset.awarenessOpen);
+                if (dialog && typeof dialog.showModal === 'function') {
+                    dialog.showModal();
+                }
+            });
+        });
+
+        root.querySelectorAll('[data-awareness-close]').forEach(function (button) {
+            if (button.dataset.awarenessBound === 'true') return;
+            button.dataset.awarenessBound = 'true';
+            button.addEventListener('click', function () {
+                const dialog = button.closest('dialog');
+                if (dialog) {
+                    dialog.close();
+                }
+            });
+        });
+    }
+
+    bindAwarenessDialogs(document);
+
+    const awarenessSearchForm = document.querySelector('[data-awareness-search]');
+    const awarenessResults = document.querySelector('[data-awareness-results]');
+    if (awarenessSearchForm && awarenessResults) {
+        const awarenessInputs = awarenessSearchForm.querySelectorAll('[data-awareness-search-input]');
+        let awarenessTimer = null;
+        let awarenessController = null;
+
+        const buildAwarenessUrl = function () {
+            const params = new URLSearchParams(new FormData(awarenessSearchForm));
+            Array.from(params.keys()).forEach(function (key) {
+                if (!params.get(key)) {
+                    params.delete(key);
+                }
+            });
+            const endpoint = awarenessSearchForm.dataset.endpoint || awarenessSearchForm.action;
+            return `${endpoint}?${params.toString()}`;
+        };
+
+        const updateAwarenessBrowserUrl = function () {
+            const params = new URLSearchParams(new FormData(awarenessSearchForm));
+            Array.from(params.keys()).forEach(function (key) {
+                if (!params.get(key)) {
+                    params.delete(key);
+                }
+            });
+            const nextUrl = new URL(window.location.href);
+            nextUrl.search = params.toString();
+            window.history.replaceState({}, '', nextUrl);
+        };
+
+        const runAwarenessSearch = async function () {
+            if (awarenessController) {
+                awarenessController.abort();
+            }
+            awarenessController = new AbortController();
+            awarenessResults.setAttribute('aria-busy', 'true');
+            awarenessResults.classList.add('is-loading');
+
+            try {
+                const response = await fetch(buildAwarenessUrl(), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html; charset=utf-8',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin',
+                    signal: awarenessController.signal
+                });
+                awarenessResults.innerHTML = await response.text();
+                bindAwarenessDialogs(awarenessResults);
+                updateAwarenessBrowserUrl();
+                if (!response.ok) {
+                    showApplicationNotification('Não foi possível pesquisar as conscientizações.', 'danger');
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    showApplicationNotification('Não foi possível pesquisar as conscientizações.', 'danger');
+                }
+            } finally {
+                awarenessResults.setAttribute('aria-busy', 'false');
+                awarenessResults.classList.remove('is-loading');
+            }
+        };
+
+        awarenessInputs.forEach(function (input) {
+            input.addEventListener(input.type === 'search' ? 'input' : 'change', function () {
+                window.clearTimeout(awarenessTimer);
+                awarenessTimer = window.setTimeout(runAwarenessSearch, input.type === 'search' ? 350 : 0);
+            });
+        });
+
+        awarenessSearchForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            runAwarenessSearch();
+        });
+    }
+
 });

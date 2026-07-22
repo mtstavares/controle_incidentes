@@ -32,6 +32,7 @@ migration_report*.json
 instance/
 uploads/
 static/uploads/
+instance/uploads/conscientizacoes/
 logs/
 *.log
 

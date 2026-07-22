@@ -93,6 +93,17 @@ AUDITABLE_FIELDS = {
         "imported_at",
         "imported_by_id",
     },
+    "ConscientizacaoCampanha": {
+        "titulo",
+        "imagem_arquivo",
+        "imagem_mime_type",
+        "imagem_tamanho",
+        "data_publicacao",
+        "created_by_id",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+    },
 }
 
 SENSITIVE_KEYS = {
