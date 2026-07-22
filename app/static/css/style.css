@@ -349,7 +349,7 @@ h1 {
 }
 
 .app-card__body {
-  padding: var(--space-5);
+  padding: var(--space-3);
 }
 
 .metric-grid {
@@ -384,7 +384,7 @@ h1 {
 .metric-card__value {
   margin: var(--space-2) 0 0;
   color: var(--color-primary);
-  font-size: 2rem;
+  font-size: 1.5rem;
   font-weight: 850;
   line-height: 1;
 }
@@ -496,10 +496,100 @@ h1 {
   text-align: right;
 }
 
+.dashboard-loading {
+  padding: var(--space-4);
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.credential-column-chart {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 22rem;
+  overflow-x: auto;
+}
+
+.credential-column-chart__axis {
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  min-height: 18rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.credential-column-chart__axis span {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-1);
+}
+
+.credential-column-chart__columns {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(3.5rem, 1fr));
+  align-items: end;
+  gap: var(--space-3);
+  min-width: 42rem;
+  min-height: 18rem;
+  padding-top: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.credential-column-chart__item {
+  display: grid;
+  grid-template-rows: minmax(16rem, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.credential-column-chart__bar {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  min-height: 0.25rem;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-primary);
+  color: #fff;
+  transition: height var(--transition-default), background var(--transition-fast);
+}
+
+.credential-column-chart__bar:hover,
+.credential-column-chart__bar:focus-visible {
+  background: var(--color-primary-hover);
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
+  outline-offset: 2px;
+}
+
+.credential-column-chart__value {
+  padding-top: var(--space-1);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.credential-column-chart__label {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .hierarchy-chart__axis,
   .hierarchy-bar-row {
     grid-template-columns: minmax(8rem, 10rem) minmax(14rem, 1fr) 2.5rem;
+  }
+
+  .credential-column-chart {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+
+  .credential-column-chart__columns {
+    grid-template-columns: repeat(12, minmax(3rem, 1fr));
+    min-width: 38rem;
   }
 }
 
@@ -592,6 +682,7 @@ h1 {
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .app-table tbody td {

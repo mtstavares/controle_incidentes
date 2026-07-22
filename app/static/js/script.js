@@ -309,6 +309,138 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    const credentialDashboard = document.querySelector('[data-credential-dashboard]');
+    const credentialDashboardForm = document.querySelector('[data-credential-dashboard-filters]');
+
+    if (credentialDashboard && credentialDashboardForm) {
+        const endpoint = credentialDashboard.getAttribute('data-endpoint');
+        const yearSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-year]');
+        const monthSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-month]');
+        const chart = credentialDashboard.querySelector('[data-credential-dashboard-chart]');
+        const loading = credentialDashboard.querySelector('[data-credential-dashboard-loading]');
+        const emptyState = credentialDashboard.querySelector('[data-credential-dashboard-empty]');
+        const errorState = credentialDashboard.querySelector('[data-credential-dashboard-error]');
+        let activeController = null;
+
+        const setDashboardState = function (state) {
+            if (loading) loading.hidden = state !== 'loading';
+            if (emptyState) emptyState.hidden = state !== 'empty';
+            if (errorState) errorState.hidden = state !== 'error';
+            if (chart) chart.hidden = state === 'error';
+            if (chart) chart.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        };
+
+        const applyUrlFiltersToFields = function () {
+            const params = new URLSearchParams(window.location.search);
+            const year = params.get('year');
+            const month = params.get('month');
+            if (year && yearSelect && Array.from(yearSelect.options).some(function (option) { return option.value === year; })) {
+                yearSelect.value = year;
+            }
+            if (month && monthSelect && Array.from(monthSelect.options).some(function (option) { return option.value === month; })) {
+                monthSelect.value = month;
+            }
+        };
+
+        const buildDashboardUrl = function () {
+            const params = new URLSearchParams();
+            params.set('year', yearSelect.value);
+            params.set('month', monthSelect.value || 'all');
+            return endpoint + '?' + params.toString();
+        };
+
+        const updateDashboardBrowserUrl = function () {
+            const url = new URL(window.location.href);
+            url.searchParams.set('year', yearSelect.value);
+            url.searchParams.set('month', monthSelect.value || 'all');
+            window.history.replaceState({}, '', url);
+        };
+
+        const renderCredentialColumnChart = function (items) {
+            chart.textContent = '';
+            const maxTotal = Math.max.apply(null, items.map(function (item) { return item.total; }).concat([0]));
+            const hasAnyData = items.some(function (item) { return item.total > 0; });
+
+            const axis = document.createElement('div');
+            axis.className = 'credential-column-chart__axis';
+            axis.setAttribute('aria-hidden', 'true');
+            axis.innerHTML = '<span>' + maxTotal + '</span><span>' + Math.ceil(maxTotal / 2) + '</span><span>0</span>';
+            chart.appendChild(axis);
+
+            const columns = document.createElement('div');
+            columns.className = 'credential-column-chart__columns';
+
+            items.forEach(function (item) {
+                const column = document.createElement('div');
+                column.className = 'credential-column-chart__item';
+
+                const bar = document.createElement('div');
+                bar.className = 'credential-column-chart__bar';
+                const height = maxTotal > 0 ? Math.max((item.total / maxTotal) * 100, item.total > 0 ? 5 : 0) : 0;
+                bar.style.height = height + '%';
+                bar.tabIndex = 0;
+                bar.title = item.monthName + ' de ' + item.year + ': ' + item.total + ' credenciais';
+                bar.setAttribute('aria-label', bar.title);
+
+                const value = document.createElement('span');
+                value.className = 'credential-column-chart__value';
+                value.textContent = item.total;
+                bar.appendChild(value);
+
+                const label = document.createElement('span');
+                label.className = 'credential-column-chart__label';
+                label.textContent = item.monthName.slice(0, 3);
+                label.title = item.monthName;
+
+                column.appendChild(bar);
+                column.appendChild(label);
+                columns.appendChild(column);
+            });
+
+            chart.appendChild(columns);
+            setDashboardState(hasAnyData ? 'ready' : 'empty');
+        };
+
+        const loadCredentialDashboard = async function () {
+            if (activeController) {
+                activeController.abort();
+            }
+            activeController = new AbortController();
+            setDashboardState('loading');
+
+            try {
+                const response = await fetch(buildDashboardUrl(), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin',
+                    signal: activeController.signal
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.error) {
+                    throw new Error(payload.error && payload.error.message ? payload.error.message : 'Erro no dashboard');
+                }
+                renderCredentialColumnChart(payload.data || []);
+                updateDashboardBrowserUrl();
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    chart.textContent = '';
+                    setDashboardState('error');
+                }
+            }
+        };
+
+        applyUrlFiltersToFields();
+        [yearSelect, monthSelect].forEach(function (select) {
+            if (select) {
+                select.addEventListener('change', loadCredentialDashboard);
+            }
+        });
+        loadCredentialDashboard();
+    }
+
     initializeAutoDismissNotifications();
 
     const incidentSearchInput = document.querySelector('[data-incident-search-input]');

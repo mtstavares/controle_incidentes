@@ -2,33 +2,57 @@
 {% from 'components/macros.html' import page_header, empty_state %}
 
 {% block content %}
-{{ page_header('Dashboard de credenciais comprometidas', 'Área preparada para indicadores e gráficos do futuro módulo de credenciais.') }}
+{{ page_header('Dashboard de credenciais comprometidas') }}
 
-<section class="metric-grid" aria-label="Indicadores futuros de credenciais">
-    <article class="metric-card">
-        <p class="metric-card__label">Total monitorado</p>
-        <p class="metric-card__value">--</p>
-    </article>
-    <article class="metric-card">
-        <p class="metric-card__label">Em análise</p>
-        <p class="metric-card__value">--</p>
-    </article>
-    <article class="metric-card">
-        <p class="metric-card__label">Mitigadas</p>
-        <p class="metric-card__value">--</p>
-    </article>
-    <article class="metric-card">
-        <p class="metric-card__label">Fontes</p>
-        <p class="metric-card__value">--</p>
-    </article>
-</section>
-
-<section class="app-card" aria-labelledby="cred-dashboard-title">
+<section class="app-card mb-4" aria-labelledby="credential-dashboard-filter-title">
     <div class="app-card__header">
-        <h2 id="cred-dashboard-title" class="h5 mb-0">Gráficos</h2>
+        <h2 id="credential-dashboard-filter-title" class="h5 mb-0">Filtros</h2>
     </div>
     <div class="app-card__body">
-        {{ empty_state('Dashboard em desenvolvimento', 'O módulo de dashboard de credenciais comprometidas está em desenvolvimento. Nenhuma estatística fictícia foi gerada.') }}
+        <form class="filter-grid" data-credential-dashboard-filters>
+            <div class="span-3">
+                <label for="credentialDashboardYear" class="form-label">Ano</label>
+                <select class="form-select" id="credentialDashboardYear" name="year" data-credential-dashboard-year>
+                    {% if years %}
+                        {% for year in years %}
+                            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="{{ selected_year }}" selected>{{ selected_year }}</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="credentialDashboardMonth" class="form-label">Mês</label>
+                <select class="form-select" id="credentialDashboardMonth" name="month" data-credential-dashboard-month>
+                    <option value="all" selected>Todos os meses</option>
+                    {% for number, label in months.items() %}
+                        <option value="{{ number }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</section>
+
+<section class="app-card" aria-labelledby="credential-dashboard-chart-title" data-credential-dashboard data-endpoint="{{ url_for('dashboard.api_dashboard_credenciais') }}">
+    <div class="app-card__header">
+        <h2 id="credential-dashboard-chart-title" class="h5 mb-0">Credenciais coletadas por mês</h2>
+    </div>
+    <div class="app-card__body">
+        <div class="dashboard-loading" data-credential-dashboard-loading role="status" aria-live="polite" hidden>
+            Carregando dados do dashboard...
+        </div>
+
+        <div class="credential-column-chart" data-credential-dashboard-chart aria-label="Gráfico de colunas com credenciais coletadas por mês"></div>
+
+        <div data-credential-dashboard-empty hidden>
+            {{ empty_state('Nenhuma credencial encontrada para o período.', 'Os meses sem ocorrências permanecem no gráfico com valor zero.') }}
+        </div>
+
+        <div class="app-notification app-notification--danger" data-credential-dashboard-error role="alert" hidden>
+            <div class="app-notification__content">Não foi possível carregar o dashboard de credenciais.</div>
+        </div>
     </div>
 </section>
 {% endblock %}
