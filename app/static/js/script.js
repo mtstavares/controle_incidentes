@@ -361,22 +361,12 @@ document.addEventListener('DOMContentLoaded', function () {
             const maxTotal = Math.max.apply(null, items.map(function (item) { return item.total; }).concat([0]));
             const hasAnyData = items.some(function (item) { return item.total > 0; });
 
-            const axis = document.createElement('div');
-            axis.className = 'credential-column-chart__axis';
-            axis.setAttribute('aria-hidden', 'true');
-            axis.innerHTML = '<span>' + maxTotal + '</span><span>' + Math.ceil(maxTotal / 2) + '</span><span>0</span>';
-            chart.appendChild(axis);
-
             const columns = document.createElement('div');
             columns.className = 'credential-column-chart__columns';
 
             items.forEach(function (item) {
                 const column = document.createElement('div');
                 column.className = 'credential-column-chart__item';
-
-                const value = document.createElement('span');
-                value.className = 'credential-column-chart__value';
-                value.textContent = item.total;
 
                 const bar = document.createElement('div');
                 bar.className = 'credential-column-chart__bar';
@@ -386,12 +376,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 bar.title = item.monthName + ' de ' + item.year + ': ' + item.total + ' credenciais';
                 bar.setAttribute('aria-label', bar.title);
 
+                if (item.total > 0) {
+                    const value = document.createElement('span');
+                    value.className = 'credential-column-chart__value';
+                    value.textContent = item.total;
+                    bar.appendChild(value);
+                }
+
                 const label = document.createElement('span');
                 label.className = 'credential-column-chart__label';
                 label.textContent = item.monthName.slice(0, 3);
                 label.title = item.monthName;
 
-                column.appendChild(value);
                 column.appendChild(bar);
                 column.appendChild(label);
                 columns.appendChild(column);
