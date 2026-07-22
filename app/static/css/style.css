@@ -618,6 +618,7 @@ h1 {
   min-height: 44px;
   border-color: var(--color-border-strong);
   border-radius: var(--radius-md);
+  margin-bottom: 1.2rem;
 }
 
 .form-control:focus,
