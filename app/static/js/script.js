@@ -121,7 +121,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!/^\d{6}$|^\d{11}$/.test(input.value)) {
                 event.preventDefault();
                 showApplicationNotification('CPF ou RE inválido.', 'danger');
+                return;
             }
+            window.setTimeout(function () {
+                input.value = '';
+            }, 0);
         });
     });
 
