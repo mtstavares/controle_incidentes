@@ -72,9 +72,9 @@
                 <thead>
                     <tr>
                         <th class="credential-cpf-cell">CPF</th>
-                        <th>Data da coleta</th>
                         <th>Nome</th>
                         <th>E-mail</th>
+                        <th>Data da coleta</th>
                         <th>Mensagem de bloqueio</th>
                         <th>Situação legal</th>
                     </tr>
@@ -83,9 +83,9 @@
                     {% for credencial in credenciais %}
                     <tr>
                         <td class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</td>
-                        <td>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</td>
                         <td>{{ credencial.nome }}</td>
                         <td>{{ credencial.email }}</td>
+                        <td>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</td>
                         <td>{{ credencial.mensagem_bloqueio or '' }}</td>
                         <td>{{ credencial.situacao_legal or '' }}</td>
                     </tr>
@@ -161,9 +161,9 @@
         table.innerHTML = rows.map(function (row) {
             return '<tr>' +
                 '<td class="credential-cpf-cell">' + escapeText(row.cpf) + '</td>' +
-                '<td>' + escapeText(row.data_coleta) + '</td>' +
                 '<td>' + escapeText(row.nome) + '</td>' +
                 '<td>' + escapeText(row.email) + '</td>' +
+                '<td>' + escapeText(row.data_coleta) + '</td>' +
                 '<td>' + escapeText(row.mensagem_bloqueio) + '</td>' +
                 '<td>' + escapeText(row.situacao_legal) + '</td>' +
             '</tr>';
