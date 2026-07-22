@@ -40,6 +40,7 @@ class Config:
         "https://webservices.intranet.policiamilitar.sp.gov.br/pmesp.cdpm/api/v1/PolicialMilitar",
     )
     PM_API_TIMEOUT = float(os.getenv("PM_API_TIMEOUT", "10"))
+    PM_API_VERIFY_TLS = os.getenv("PM_API_VERIFY_TLS", "1") != "0"
     PM_API_CA_BUNDLE = os.getenv("PM_API_CA_BUNDLE")
     PM_SEARCH_CACHE_TTL_SECONDS = int(os.getenv("PM_SEARCH_CACHE_TTL_SECONDS", "300"))
     PERMANENT_SESSION_LIFETIME = timedelta(hours=5)

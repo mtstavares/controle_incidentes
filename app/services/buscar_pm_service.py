@@ -116,8 +116,8 @@ def _base_url():
 
 
 def _verify_config():
-    # Mantém validação normal de certificado. Se a intranet usar CA própria,
-    # configure PM_API_CA_BUNDLE com o caminho do bundle confiável.
+    if current_app.config.get("PM_API_VERIFY_TLS") is False:
+        return False
     return current_app.config.get("PM_API_CA_BUNDLE") or True
 
 

@@ -40,6 +40,7 @@ DATABASE_URL=sqlite:////app/instance/divciber.db
 TIMEZONE=America/Sao_Paulo
 DIVCIBER_PORT=5005
 GUNICORN_WORKERS=1
+PM_API_VERIFY_TLS=0
 EOF
   chmod 600 .env
   echo "Arquivo .env criado com SECRET_KEY gerada automaticamente."

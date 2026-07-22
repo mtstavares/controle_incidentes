@@ -202,6 +202,15 @@ class BuscarPMTest(unittest.TestCase):
         self.assertTrue(all(call["verify"] is True for call in FakeSession.instances[0].calls))
         self.assertIsNotNone(AuditLog.query.filter_by(entidade="ConsultaPM", resultado="SUCESSO").first())
 
+    def test_tls_verification_can_be_disabled_by_config(self):
+        self.app.config["PM_API_VERIFY_TLS"] = False
+        self.login("admin")
+        with self.patch_session(cpf_responses()):
+            response = self.client.post("/utilitarios/buscar-pm", data={"query": "12345678909"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(all(call["verify"] is False for call in FakeSession.instances[0].calls))
+
     def test_user_can_search_by_re_and_reuses_cpf_flow(self):
         responses = cpf_responses()
         responses["/re/123456/dadosResumidos"] = FakeResponse(payload=dados_resumidos())
