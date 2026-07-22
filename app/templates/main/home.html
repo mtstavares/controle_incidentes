@@ -11,7 +11,6 @@
                 <img src="{{ url_for('static', filename='img/Divciber_logo.png') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 280px;">
             </div>
             <div class="col-lg-9">
-                
                 <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
                 <p class="h2 text-muted">O preço da liberdade é a eterna vigilância</p>
             </div>
@@ -22,27 +21,27 @@
 <section class="metric-grid-incidentes" aria-label="Atalhos principais">
     <article class="metric-card">
         <p class="metric-card__label">Operação</p>
-        <p class="metric-card__value">Incidentes</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.incidents_list') }}">Acessar lista</a>
+        <p class="metric-card__value">Incidentes de segurança</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.incidents_list') }}">Lista de incidentes</a>
     </article>
-    <article class="metric-card">
-        <p class="metric-card__label">Indicadores</p>
-        <p class="metric-card__value">Status</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes', view='status') }}">Ver dashboard</a>
-    </article>
-    <article class="metric-card">
-        <p class="metric-card__label">Distribuição</p>
-        <p class="metric-card__value">CPA/BTL</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes', view='cpa-btl') }}">Analisar</a>
-    </article>
-    {% if current_user.profile in ['Admin', 'User'] %}
-    <article class="metric-card">
-        <p class="metric-card__label">Registro</p>
-        <p class="metric-card__value">Novo</p>
-        <a class="btn btn-primary mt-3" href="{{ url_for('incidente.new_incident') }}">Registrar incidente</a>
-    </article>
-    {% endif %}
-</section>
 
+    <article class="metric-card">
+        <p class="metric-card__label">Operação</p>
+        <p class="metric-card__value">Credenciais comprometidas</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('credenciais.listar_credenciais') }}">Lista de credenciais</a>
+    </article>
+
+    <article class="metric-card">
+        <p class="metric-card__label">Inteligência</p>
+        <p class="metric-card__value">Dashboard de incidentes</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes') }}">Dashboard de incidentes</a>
+    </article>
+
+    <article class="metric-card">
+        <p class="metric-card__label">Inteligência</p>
+        <p class="metric-card__value">Dashboard de credenciais</p>
+        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('dashboard.dashboard_credenciais') }}">Dashboard de credenciais</a>
+    </article>
+</section>
 
 {% endblock %}
