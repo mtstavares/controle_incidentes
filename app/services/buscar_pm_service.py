@@ -4,10 +4,17 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
 
 import requests
 from flask import current_app
+
+from app.services.internal_api import (
+    InternalAPIClient,
+    InternalAPIConfigurationError,
+    PM_ENDPOINTS,
+    SERVICE_PM_CDPM,
+    build_endpoint,
+)
 
 
 VALID_QUERY_RE = re.compile(r"^\d{6}$|^\d{11}$")
@@ -111,20 +118,6 @@ def clear_pm_cache():
         _CACHE.clear()
 
 
-def _base_url():
-    return str(current_app.config["PM_API_BASE_URL"]).rstrip("/")
-
-
-def _verify_config():
-    if current_app.config.get("PM_API_VERIFY_TLS") is False:
-        return False
-    return current_app.config.get("PM_API_CA_BUNDLE") or True
-
-
-def _timeout():
-    return float(current_app.config.get("PM_API_TIMEOUT", 10))
-
-
 def _first_dados(payload):
     dados = payload.get("dados") if isinstance(payload, dict) else None
     if not isinstance(dados, list) or not dados:
@@ -160,10 +153,12 @@ def _text(value, default="Não disponível"):
     return text or default
 
 
-def _request_json(session, path):
-    url = f"{_base_url()}/{path.lstrip('/')}"
+def _request_json(client, path):
     try:
-        response = session.get(url, timeout=_timeout(), verify=_verify_config())
+        response = client.get_json(path)
+    except InternalAPIConfigurationError as exc:
+        current_app.logger.warning("Falha na consulta PM: configuração ausente.")
+        raise BuscarPMUnavailableError() from exc
     except requests.Timeout as exc:
         current_app.logger.warning("Falha na consulta PM: timeout.")
         raise BuscarPMTimeoutError() from exc
@@ -192,9 +187,9 @@ def _request_json(session, path):
         raise BuscarPMInvalidResponseError() from exc
 
 
-def _request_optional_json(session, path):
+def _request_optional_json(client, path):
     try:
-        return _request_json(session, path)
+        return _request_json(client, path)
     except BuscarPMNotFoundError:
         return {"dados": []}
 
@@ -305,8 +300,8 @@ def _foto(data):
     return f"data:image/jpeg;base64,{image_value}"
 
 
-def _cpf_from_re(session, re_value):
-    payload = _request_json(session, f"re/{quote(re_value)}/dadosResumidos")
+def _cpf_from_re(client, re_value):
+    payload = _request_json(client, build_endpoint(PM_ENDPOINTS["dados_por_re"], re=re_value))
     data = _first_dados(payload)
     cpf = _safe_get(data, "cpf", "cpfComDigito")
     if not cpf:
@@ -316,8 +311,8 @@ def _cpf_from_re(session, re_value):
 
 def buscar_pm(query_value):
     query = normalize_query(query_value)
-    with requests.Session() as session:
-        cpf = query.value if query.kind == "CPF" else _cpf_from_re(session, query.value)
+    with InternalAPIClient(SERVICE_PM_CDPM) as client:
+        cpf = query.value if query.kind == "CPF" else _cpf_from_re(client, query.value)
         cached = _cache_get(cpf)
         if cached:
             result = dict(cached)
@@ -325,11 +320,19 @@ def buscar_pm(query_value):
             result["query_kind"] = query.kind
             return result
 
-        resumidos = _first_dados(_request_json(session, f"cpf/{quote(cpf)}/dadosResumidos"))
-        caracteristicas = _first_optional_dados(_request_optional_json(session, f"cpf/{quote(cpf)}/caracteristicaFisica"))
-        documentos = _first_optional_dados(_request_optional_json(session, f"cpf/{quote(cpf)}/documentos"))
-        contato = _first_optional_dados(_request_optional_json(session, f"cpf/{quote(cpf)}/informacaoContato"))
-        foto_payload = _first_optional_dados(_request_optional_json(session, f"cpf/{quote(cpf)}/pesquisaFoto"))
+        resumidos = _first_dados(_request_json(client, build_endpoint(PM_ENDPOINTS["dados_por_cpf"], cpf=cpf)))
+        caracteristicas = _first_optional_dados(
+            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["caracteristica_fisica"], cpf=cpf))
+        )
+        documentos = _first_optional_dados(
+            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["documentos"], cpf=cpf))
+        )
+        contato = _first_optional_dados(
+            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["informacao_contato"], cpf=cpf))
+        )
+        foto_payload = _first_optional_dados(
+            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["pesquisa_foto"], cpf=cpf))
+        )
 
     result = {
         "query_kind": query.kind,

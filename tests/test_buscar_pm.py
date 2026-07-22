@@ -50,6 +50,9 @@ class FakeSession:
     def __exit__(self, exc_type, exc, tb):
         return False
 
+    def close(self):
+        pass
+
     def get(self, url, timeout=None, verify=None):
         self.calls.append({"url": url, "timeout": timeout, "verify": verify})
         for key, response in self.responses.items():
@@ -172,7 +175,7 @@ class BuscarPMTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     def patch_session(self, responses):
-        return patch("app.services.buscar_pm_service.requests.Session", lambda: FakeSession(responses))
+        return patch("app.services.internal_api.requests.Session", lambda: FakeSession(responses))
 
     def test_navbar_and_page_are_available_for_authenticated_users(self):
         self.login("viewer")
