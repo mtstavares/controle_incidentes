@@ -64,11 +64,10 @@ function showApplicationNotification(message, type = 'info') {
 
 function createNotificationContainer() {
     const container = document.createElement('section');
-    container.className = 'app-notification-stack mb-4';
+    container.className = 'app-notification-stack';
     container.dataset.notificationContainer = '';
     container.setAttribute('aria-label', 'Mensagens do sistema');
-    const contentWrap = document.querySelector('.content-wrap') || document.body;
-    contentWrap.prepend(container);
+    document.body.appendChild(container);
     return container;
 }
 

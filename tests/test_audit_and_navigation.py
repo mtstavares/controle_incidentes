@@ -1,6 +1,7 @@
 import unittest
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -320,6 +321,8 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
             follow_redirects=True,
         ).get_data(as_text=True)
         self.assertIn("data-app-notification", login_flash)
+        self.assertIn('class="app-notification-stack"', login_flash)
+        self.assertNotIn('class="app-notification-stack mb-4"', login_flash)
         self.login("user", "user123")
 
         fragment = self.client.get("/incidentes/pesquisa?q=10.44.44.21").get_data(as_text=True)
@@ -341,6 +344,19 @@ class DivCiberAuditNavigationTest(unittest.TestCase):
         unsafe_detail = self.client.get(f"/incidente/{incident.id}?return_to=https://evil.example").get_data(as_text=True)
         self.assertIn('href="/incidentes"', unsafe_detail)
         self.assertNotIn("evil.example", unsafe_detail)
+
+    def test_notifications_are_floating_and_xss_safe(self):
+        css = Path("app/static/css/style.css").read_text(encoding="utf-8")
+        js = Path("app/static/js/script.js").read_text(encoding="utf-8")
+
+        self.assertIn(".app-notification-stack", css)
+        self.assertIn("position: fixed;", css)
+        self.assertIn("z-index: 2000;", css)
+        self.assertIn("pointer-events: none;", css)
+        self.assertIn("document.body.appendChild(container);", js)
+        self.assertIn("content.textContent = message;", js)
+        self.assertNotIn("innerHTML = message", js)
+        self.assertNotIn("notificaÃ", js)
 
     def test_incident_search_covers_text_relations_attachments_and_safe_terms(self):
         self.login("user", "user123")
