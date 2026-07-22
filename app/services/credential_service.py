@@ -397,9 +397,11 @@ def order_credentials(query, args):
 
 
 def credential_to_table_dict(item):
+    data_coleta = item.data_coleta.strftime("%d/%m/%Y") if item.data_coleta else ""
     return {
         "id": item.id,
         "cpf": format_cpf(item.cpf),
+        "data_coleta": data_coleta,
         "nome": item.nome,
         "email": item.email,
         "mensagem_bloqueio": item.mensagem_bloqueio or "",

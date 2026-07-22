@@ -124,6 +124,7 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["meta"]["total"], 1)
         self.assertEqual(payload["data"][0]["cpf"], "529.982.247-25")
+        self.assertEqual(payload["data"][0]["data_coleta"], "21/07/2026")
         self.assertNotIn("SuperSecreta", str(payload))
         self.assertNotIn("url", payload["data"][0])
 

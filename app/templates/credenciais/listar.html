@@ -71,7 +71,8 @@
             <table class="table app-table">
                 <thead>
                     <tr>
-                        <th>CPF</th>
+                        <th class="credential-cpf-cell">CPF</th>
+                        <th>Data da coleta</th>
                         <th>Nome</th>
                         <th>E-mail</th>
                         <th>Mensagem de bloqueio</th>
@@ -81,7 +82,8 @@
                 <tbody data-credentials-table>
                     {% for credencial in credenciais %}
                     <tr>
-                        <td>{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</td>
+                        <td class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</td>
+                        <td>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</td>
                         <td>{{ credencial.nome }}</td>
                         <td>{{ credencial.email }}</td>
                         <td>{{ credencial.mensagem_bloqueio or '' }}</td>
@@ -96,7 +98,8 @@
             <article class="mobile-record-card">
                 <h3 class="h6 mb-1">{{ credencial.nome }}</h3>
                 <dl class="record-meta">
-                    <div><dt>CPF</dt><dd>{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</dd></div>
+                    <div><dt>CPF</dt><dd class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</dd></div>
+                    <div><dt>Data da coleta</dt><dd>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</dd></div>
                     <div><dt>E-mail</dt><dd class="user-email">{{ credencial.email }}</dd></div>
                     <div><dt>Mensagem de bloqueio</dt><dd>{{ credencial.mensagem_bloqueio or '' }}</dd></div>
                     <div><dt>Situação legal</dt><dd>{{ credencial.situacao_legal or '' }}</dd></div>
@@ -157,7 +160,8 @@
     function renderRows(rows) {
         table.innerHTML = rows.map(function (row) {
             return '<tr>' +
-                '<td>' + escapeText(row.cpf) + '</td>' +
+                '<td class="credential-cpf-cell">' + escapeText(row.cpf) + '</td>' +
+                '<td>' + escapeText(row.data_coleta) + '</td>' +
                 '<td>' + escapeText(row.nome) + '</td>' +
                 '<td>' + escapeText(row.email) + '</td>' +
                 '<td>' + escapeText(row.mensagem_bloqueio) + '</td>' +
@@ -169,7 +173,8 @@
             return '<article class="mobile-record-card">' +
                 '<h3 class="h6 mb-1">' + escapeText(row.nome) + '</h3>' +
                 '<dl class="record-meta">' +
-                    '<div><dt>CPF</dt><dd>' + escapeText(row.cpf) + '</dd></div>' +
+                    '<div><dt>CPF</dt><dd class="credential-cpf-cell">' + escapeText(row.cpf) + '</dd></div>' +
+                    '<div><dt>Data da coleta</dt><dd>' + escapeText(row.data_coleta) + '</dd></div>' +
                     '<div><dt>E-mail</dt><dd class="user-email">' + escapeText(row.email) + '</dd></div>' +
                     '<div><dt>Mensagem de bloqueio</dt><dd>' + escapeText(row.mensagem_bloqueio) + '</dd></div>' +
                     '<div><dt>Situação legal</dt><dd>' + escapeText(row.situacao_legal) + '</dd></div>' +
