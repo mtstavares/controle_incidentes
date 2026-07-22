@@ -259,6 +259,32 @@ class BuscarPMTest(unittest.TestCase):
         self.assertIn("Tempo limite excedido", html)
         self.assertNotIn("Traceback", html)
 
+    def test_certificate_error_has_specific_message(self):
+        responses = {
+            "/cpf/12345678909/dadosResumidos": requests.exceptions.SSLError("certificate verify failed"),
+        }
+        self.login("admin")
+        with self.patch_session(responses):
+            response = self.client.post("/utilitarios/buscar-pm", data={"query": "12345678909"})
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Não foi possível validar o certificado", html)
+        self.assertIsNotNone(AuditLog.query.filter_by(entidade="ConsultaPM", resultado="ERRO_CERTIFICADO").first())
+
+    def test_connection_error_has_specific_message(self):
+        responses = {
+            "/cpf/12345678909/dadosResumidos": requests.exceptions.ConnectionError("name resolution failed"),
+        }
+        self.login("admin")
+        with self.patch_session(responses):
+            response = self.client.post("/utilitarios/buscar-pm", data={"query": "12345678909"})
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Não foi possível conectar", html)
+        self.assertIsNotNone(AuditLog.query.filter_by(entidade="ConsultaPM", resultado="ERRO_CONEXAO").first())
+
     def test_cache_avoids_repeated_cpf_queries(self):
         self.login("admin")
         with self.patch_session(cpf_responses()):

@@ -35,6 +35,19 @@ class BuscarPMUnavailableError(BuscarPMError):
     audit_result = "INDISPONIVEL"
 
 
+class BuscarPMCertificateError(BuscarPMError):
+    message = (
+        "Não foi possível validar o certificado da API interna. "
+        "Configure o certificado confiável em PM_API_CA_BUNDLE."
+    )
+    audit_result = "ERRO_CERTIFICADO"
+
+
+class BuscarPMConnectionError(BuscarPMError):
+    message = "Não foi possível conectar ao serviço de consulta. Verifique a rede interna."
+    audit_result = "ERRO_CONEXAO"
+
+
 class BuscarPMAuthError(BuscarPMError):
     message = "Não foi possível autenticar na API de consulta."
     audit_result = "ERRO_AUTENTICACAO"
@@ -152,8 +165,16 @@ def _request_json(session, path):
     try:
         response = session.get(url, timeout=_timeout(), verify=_verify_config())
     except requests.Timeout as exc:
+        current_app.logger.warning("Falha na consulta PM: timeout.")
         raise BuscarPMTimeoutError() from exc
+    except requests.exceptions.SSLError as exc:
+        current_app.logger.warning("Falha na consulta PM: certificado TLS inválido.")
+        raise BuscarPMCertificateError() from exc
+    except requests.exceptions.ConnectionError as exc:
+        current_app.logger.warning("Falha na consulta PM: erro de conexão.")
+        raise BuscarPMConnectionError() from exc
     except requests.RequestException as exc:
+        current_app.logger.warning("Falha na consulta PM: %s.", exc.__class__.__name__)
         raise BuscarPMUnavailableError() from exc
 
     if response.status_code in {401, 403}:
