@@ -736,4 +736,22 @@ document.addEventListener('DOMContentLoaded', function () {
             window.addIncidentAttachmentFiles(event.dataTransfer.files);
         });
     });
+
+    document.querySelectorAll('[data-awareness-open]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            const dialog = document.getElementById(button.dataset.awarenessOpen);
+            if (dialog && typeof dialog.showModal === 'function') {
+                dialog.showModal();
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-awareness-close]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            const dialog = button.closest('dialog');
+            if (dialog) {
+                dialog.close();
+            }
+        });
+    });
 });

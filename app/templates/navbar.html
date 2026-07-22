@@ -12,7 +12,7 @@
         <p class="sidebar-label">Operação</p>
         <nav class="sidebar-nav">
             <a class="sidebar-link" href="{{ url_for('main.home') }}" {% if endpoint == 'main.home' %}aria-current="page"{% endif %}>
-                <span class="sidebar-link__icon" aria-hidden="true">⌂</span>
+                <span class="sidebar-link__icon" aria-hidden="true">H</span>
                 <span>Home</span>
             </a>
             <a class="sidebar-link" href="{{ url_for('incidente.incidents_list') }}" {% if endpoint in ['incidente.incidents_list', 'incidente.search_incident', 'incidente.incident_view', 'incidente.new_incident', 'incidente.edit_incident'] %}aria-current="page"{% endif %}>
@@ -23,6 +23,10 @@
                 <span class="sidebar-link__icon" aria-hidden="true">#</span>
                 <span>Credenciais comprometidas</span>
             </a>
+            <a class="sidebar-link" href="{{ url_for('conscientizacoes.listar_conscientizacoes') }}" {% if endpoint.startswith('conscientizacoes.') %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">C</span>
+                <span>Conscientizações</span>
+            </a>
         </nav>
     </div>
 
@@ -30,11 +34,11 @@
         <p class="sidebar-label">Inteligência</p>
         <nav class="sidebar-nav">
             <a class="sidebar-link" href="{{ url_for('incidente.dashboard_incidentes') }}" {% if endpoint in ['incidente.dashboard_incidentes', 'incidente.api_dashboard_incidents'] %}aria-current="page"{% endif %}>
-                <span class="sidebar-link__icon" aria-hidden="true">▥</span>
+                <span class="sidebar-link__icon" aria-hidden="true">I</span>
                 <span>Dashboard de Incidentes</span>
             </a>
             <a class="sidebar-link" href="{{ url_for('dashboard.dashboard_credenciais') }}" {% if endpoint == 'dashboard.dashboard_credenciais' %}aria-current="page"{% endif %}>
-                <span class="sidebar-link__icon" aria-hidden="true">◇</span>
+                <span class="sidebar-link__icon" aria-hidden="true">D</span>
                 <span>Dashboard credenciais</span>
             </a>
         </nav>

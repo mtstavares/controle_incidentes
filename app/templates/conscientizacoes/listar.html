@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Conscientizações', 'Campanhas de phishing e materiais de orientação publicados pela equipe.') }}
+
+{% if can_manage %}
+<section class="app-card mb-4" aria-labelledby="awareness-form-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="awareness-form-title" class="h5 mb-1">Nova campanha</h2>
+            <p class="text-muted mb-0">Cadastre título, imagem e data de publicação.</p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form method="POST" action="{{ url_for('conscientizacoes.criar_conscientizacao') }}" enctype="multipart/form-data" data-prevent-duplicate>
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5">
+                    <label class="form-label" for="titulo">Título <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="titulo" name="titulo" maxlength="150" required>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="data_publicacao">Data de publicação <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="data_publicacao" name="data_publicacao" type="date" value="{{ today }}" required>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="imagem">Imagem <span class="required-mark" aria-hidden="true">*</span></label>
+                    <input class="form-control" id="imagem" name="imagem" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>
+                </div>
+                <div class="col-lg-1">
+                    <button class="btn btn-primary w-100" type="submit" data-loading-text="Salvando...">Salvar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if campanhas %}
+<section class="awareness-grid" aria-label="Campanhas de conscientização">
+    {% for campanha in campanhas %}
+    <article class="app-card awareness-card">
+        <button class="awareness-card__image-button" type="button" data-awareness-open="awareness-view-{{ campanha.id }}" aria-label="Ampliar campanha {{ campanha.titulo }}">
+            <img src="{{ url_for('conscientizacoes.imagem_conscientizacao', campaign_id=campanha.id) }}" alt="{{ campanha.titulo }}" loading="lazy">
+        </button>
+        <div class="app-card__body awareness-card__body">
+            <div>
+                <h2 class="h5 mb-2">{{ campanha.titulo }}</h2>
+                <p class="text-muted mb-0">{{ campanha.data_publicacao.strftime('%d/%m/%Y') }}</p>
+            </div>
+            {% if can_manage %}
+            <div class="awareness-card__actions">
+                <button class="btn btn-outline-secondary" type="button" data-awareness-open="awareness-edit-{{ campanha.id }}">Editar</button>
+                <button class="btn btn-danger" type="button" data-awareness-open="awareness-delete-{{ campanha.id }}">Excluir</button>
+            </div>
+            {% endif %}
+        </div>
+    </article>
+
+    <dialog class="awareness-dialog" id="awareness-view-{{ campanha.id }}" aria-labelledby="awareness-view-title-{{ campanha.id }}">
+        <div class="awareness-dialog__panel awareness-dialog__panel--image">
+            <button class="icon-button awareness-dialog__close" type="button" data-awareness-close aria-label="Fechar">&times;</button>
+            <img src="{{ url_for('conscientizacoes.imagem_conscientizacao', campaign_id=campanha.id) }}" alt="{{ campanha.titulo }}">
+            <div class="awareness-dialog__caption">
+                <h3 id="awareness-view-title-{{ campanha.id }}" class="h5 mb-1">{{ campanha.titulo }}</h3>
+                <p class="text-muted mb-0">{{ campanha.data_publicacao.strftime('%d/%m/%Y') }}</p>
+            </div>
+        </div>
+    </dialog>
+
+    {% if can_manage %}
+    <dialog class="confirm-dialog" id="awareness-edit-{{ campanha.id }}" aria-labelledby="awareness-edit-title-{{ campanha.id }}">
+        <form method="POST" action="{{ url_for('conscientizacoes.editar_conscientizacao', campaign_id=campanha.id) }}" enctype="multipart/form-data" class="confirm-dialog__panel" data-prevent-duplicate>
+            <h3 id="awareness-edit-title-{{ campanha.id }}" class="h5 mb-3">Editar campanha</h3>
+            <div class="mb-3">
+                <label class="form-label" for="titulo_{{ campanha.id }}">Título</label>
+                <input class="form-control" id="titulo_{{ campanha.id }}" name="titulo" maxlength="150" value="{{ campanha.titulo }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="data_publicacao_{{ campanha.id }}">Data de publicação</label>
+                <input class="form-control" id="data_publicacao_{{ campanha.id }}" name="data_publicacao" type="date" value="{{ campanha.data_publicacao.isoformat() }}" required>
+            </div>
+            <div class="mb-4">
+                <label class="form-label" for="imagem_{{ campanha.id }}">Substituir imagem</label>
+                <input class="form-control" id="imagem_{{ campanha.id }}" name="imagem" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+            </div>
+            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+                <button class="btn btn-outline-secondary" type="button" data-awareness-close>Cancelar</button>
+                <button class="btn btn-primary" type="submit" data-loading-text="Salvando...">Salvar alterações</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="awareness-delete-{{ campanha.id }}" aria-labelledby="awareness-delete-title-{{ campanha.id }}">
+        <form method="POST" action="{{ url_for('conscientizacoes.excluir_conscientizacao', campaign_id=campanha.id) }}" class="confirm-dialog__panel" data-prevent-duplicate>
+            <h3 id="awareness-delete-title-{{ campanha.id }}" class="h5 mb-3">Excluir campanha</h3>
+            <p class="mb-2">Tem certeza de que deseja excluir esta campanha?</p>
+            <dl class="record-meta record-meta--single">
+                <div>
+                    <dt>Título</dt>
+                    <dd>{{ campanha.titulo }}</dd>
+                </div>
+                <div>
+                    <dt>Data de publicação</dt>
+                    <dd>{{ campanha.data_publicacao.strftime('%d/%m/%Y') }}</dd>
+                </div>
+            </dl>
+            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+                <button class="btn btn-outline-secondary" type="button" data-awareness-close>Cancelar</button>
+                <button class="btn btn-danger" type="submit" data-loading-text="Excluindo...">Confirmar exclusão</button>
+            </div>
+        </form>
+    </dialog>
+    {% endif %}
+    {% endfor %}
+</section>
+{% else %}
+    {{ empty_state('Nenhuma campanha encontrada.', 'Cadastre a primeira campanha de conscientização para exibir a galeria.') }}
+{% endif %}
+{% endblock %}

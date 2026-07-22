@@ -89,6 +89,7 @@ def create_app(config_class=ProductionConfig):
     from app.blueprints.incidente import incidente_bp
     from app.blueprints.users import users_bp
     from app.blueprints.credenciais import credenciais_bp
+    from app.blueprints.conscientizacoes import conscientizacoes_bp
     from app.blueprints.dashboard import dashboard_bp
     from app.blueprints.admin import admin_bp
 
@@ -96,6 +97,7 @@ def create_app(config_class=ProductionConfig):
     app.register_blueprint(incidente_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(credenciais_bp)
+    app.register_blueprint(conscientizacoes_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp)
 

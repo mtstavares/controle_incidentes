@@ -1355,6 +1355,96 @@ h1 {
   max-width: 100%;
 }
 
+.awareness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.awareness-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.awareness-card__image-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: #eef3f8;
+  cursor: zoom-in;
+}
+
+.awareness-card__image-button:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.awareness-card__image-button img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+
+.awareness-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.awareness-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.awareness-dialog {
+  width: min(96vw, 1100px);
+  max-width: 96vw;
+  max-height: 94vh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+}
+
+.awareness-dialog::backdrop,
+.confirm-dialog::backdrop {
+  background: rgb(6 16 28 / 72%);
+}
+
+.awareness-dialog__panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.awareness-dialog__panel--image img {
+  display: block;
+  width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  background: #0b1724;
+}
+
+.awareness-dialog__caption {
+  padding: var(--space-4);
+}
+
+.awareness-dialog__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 2;
+  background: rgb(255 255 255 / 92%);
+}
+
 @media (min-width: 1100px) {
   .app-sidebar {
     transform: none;

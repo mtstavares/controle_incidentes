@@ -33,6 +33,8 @@ class Config:
     MAX_INCIDENT_ATTACHMENTS_SIZE = 50 * 1024 * 1024
     MAX_ATTACHMENTS_PER_INCIDENT = 10
     INCIDENT_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "incidents")
+    AWARENESS_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "conscientizacoes")
+    MAX_AWARENESS_IMAGE_SIZE = 5 * 1024 * 1024
     PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
     SESSION_REFRESH_EACH_REQUEST = False
     SESSION_COOKIE_HTTPONLY = True
