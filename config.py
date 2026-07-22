@@ -35,6 +35,15 @@ class Config:
     INCIDENT_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "incidents")
     AWARENESS_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "conscientizacoes")
     MAX_AWARENESS_IMAGE_SIZE = 5 * 1024 * 1024
+    PM_API_BASE_URL = os.getenv("PM_API_BASE_URL")
+    PM_API_TIMEOUT = float(os.getenv("PM_API_TIMEOUT", "10"))
+    PM_API_VERIFY_TLS = os.getenv("PM_API_VERIFY_TLS", "1") != "0"
+    PM_API_CA_BUNDLE = os.getenv("PM_API_CA_BUNDLE")
+    INTERNAL_API_BASE_URLS = {"pm_cdpm": PM_API_BASE_URL}
+    INTERNAL_API_TIMEOUTS = {"pm_cdpm": PM_API_TIMEOUT}
+    INTERNAL_API_VERIFY_TLS = {"pm_cdpm": PM_API_VERIFY_TLS}
+    INTERNAL_API_CA_BUNDLES = {"pm_cdpm": PM_API_CA_BUNDLE}
+    PM_SEARCH_CACHE_TTL_SECONDS = int(os.getenv("PM_SEARCH_CACHE_TTL_SECONDS", "300"))
     PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
     SESSION_REFRESH_EACH_REQUEST = False
     SESSION_COOKIE_HTTPONLY = True

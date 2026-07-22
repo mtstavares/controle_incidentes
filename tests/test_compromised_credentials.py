@@ -87,7 +87,7 @@ class CompromisedCredentialsTest(unittest.TestCase):
             "DATA COLETA": "21/07/2026",
             "Permitiu acesso a alguma aplicação?": "SIM",
             "ACESSO AD": "SIM",
-            "ACESSO MS": "NÃO",
+            "ACESSO MS": "NAO",
             "Situação legal": "Bloqueado",
             "OBSERVAÇÕES": "<script>alert(1)</script>",
             "MSG BLOQUEIO.": "=BLOQUEAR",

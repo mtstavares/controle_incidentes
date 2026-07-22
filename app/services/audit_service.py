@@ -104,6 +104,11 @@ AUDITABLE_FIELDS = {
         "updated_at",
         "deleted_at",
     },
+    "ConsultaPM": {
+        "query_kind",
+        "query_masked",
+        "elapsed_ms",
+    },
 }
 
 SENSITIVE_KEYS = {

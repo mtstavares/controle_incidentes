@@ -186,7 +186,8 @@ def _repair_mojibake(text: str) -> str:
 
 
 def _mojibake_score(text: str) -> int:
-    return sum(text.count(token) for token in ("Ã", "Â", "�", "â€", "N?o"))
+    markers = ("\u00c3", "\u00c2", "\ufffd", "\u00e2\u20ac", "N?o")
+    return sum(text.count(token) for token in markers)
 
 
 def _safe_log_value(value: Any) -> str:
