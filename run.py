@@ -1,5 +1,6 @@
 import os
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,10 +8,12 @@ load_dotenv()
 os.makedirs("instance", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
-from app import create_app, db, hash
+from app import create_app, db
 from app.models import StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.user_service import gerar_hash_senha
 from config import DevelopmentConfig
+
 
 app = create_app(DevelopmentConfig)
 
@@ -30,7 +33,7 @@ def bootstrap_local_database():
                 profile="Admin",
                 is_temp_password=False,
                 must_change_password=False,
-                password=hash("system"),
+                password=gerar_hash_senha("system"),
             ))
 
         if not User.query.filter_by(username="admin").first():
@@ -41,7 +44,7 @@ def bootstrap_local_database():
                 profile="Admin",
                 is_temp_password=False,
                 must_change_password=False,
-                password=hash("admin123"),
+                password=gerar_hash_senha("admin123"),
             ))
 
         for status, desc in [
@@ -79,10 +82,10 @@ def bootstrap_local_database():
         print("Script de criação do banco de dados concluído.")
 
 
-if not (len(sys.argv) > 1 and sys.argv[1] == "db"):
+if len(sys.argv) > 1 and sys.argv[1] == "db":
     bootstrap_local_database()
 
 
 if __name__ == "__main__":
+    bootstrap_local_database()
     app.run(port=5005, host="0.0.0.0")
-

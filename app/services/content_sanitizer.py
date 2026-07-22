@@ -14,7 +14,6 @@ ALLOWED_TAGS = {
     "blockquote", "ul", "ol", "li", "a", "code", "pre", "hr", "span", "sub", "sup",
     "div", "font",
 }
-DANGEROUS_TAGS = {"script", "style", "iframe", "object", "embed", "svg", "math", "meta", "link"}
 ALLOWED_CLASSES = {
     "ql-align-center", "ql-align-right", "ql-align-justify",
     "ql-size-small", "ql-size-large", "ql-size-huge",
@@ -45,7 +44,6 @@ class SanitizationError(ValueError):
 
 
 def _allowed_attributes(tag, name, value):
-    """Attribute allowlist delegated to bleach; rejects event handlers by default."""
     name = name.lower()
     if name.startswith("on"):
         return False
@@ -63,7 +61,6 @@ def _allowed_attributes(tag, name, value):
 
 
 def _strip_dangerous_content(raw_html):
-    # Bleach removes dangerous tags; this also removes their body text.
     cleaned = raw_html
     previous = None
     while cleaned != previous:

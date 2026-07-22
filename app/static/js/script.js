@@ -53,8 +53,8 @@ function showApplicationNotification(message, type = 'info') {
     closeButton.type = 'button';
     closeButton.className = 'app-notification__close';
     closeButton.dataset.notificationClose = '';
-    closeButton.setAttribute('aria-label', 'Fechar notifica??o');
-    closeButton.textContent = '?';
+    closeButton.setAttribute('aria-label', 'Fechar notificação');
+    closeButton.textContent = '×';
 
     notification.appendChild(content);
     notification.appendChild(closeButton);
@@ -700,11 +700,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const lowerName = file.name.toLowerCase();
             const extension = allowedExtensions.find(function (ext) { return lowerName.endsWith(ext); });
             if (!extension) {
-                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
+                showApplicationNotification('Tipo de arquivo não permitido.', 'danger');
                 return;
             }
             if (file.size > maxFileSize) {
-                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
+                showApplicationNotification('O arquivo excede o limite permitido.', 'danger');
                 return;
             }
             dataTransfer.items.add(file);
