@@ -8,11 +8,11 @@
     <div class="app-card__body">
         <div class="row align-items-center g-4">
             <div class="col-lg-3 text-center">
-                <img src="{{ url_for('static', filename='img/Divciber_logo.png') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 280px;">
+                <img src="{{ url_for('static', filename='img/Divciber_logo.png') }}" alt="Brasão da Divisão de Cibersegurança" class="img-fluid rounded-circle" style="max-width: 300px;">
             </div>
             <div class="col-lg-9">
-                <h2 class="h4 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
-                <p class="h2 text-muted">O preço da liberdade é a eterna vigilância</p>
+                <h2 class="h2 fw-bold">Bem-vindo, {{ current_user.name }}.</h2>
+                <p class="h4 text-muted">O preço da liberdade é a eterna vigilância</p>
             </div>
         </div>
     </div>
@@ -26,6 +26,12 @@
     </article>
 
     <article class="metric-card">
+        <p class="metric-card__label">Inteligência</p>
+        <p class="metric-card__value">Dashboard de incidentes</p>
+        <a class="btn btn-primary mt-3" href="{{ url_for('incidente.dashboard_incidentes') }}">Dashboard de incidentes</a>
+    </article>
+
+    <article class="metric-card">
         <p class="metric-card__label">Operação</p>
         <p class="metric-card__value">Credenciais comprometidas</p>
         <a class="btn btn-outline-secondary mt-3" href="{{ url_for('credenciais.listar_credenciais') }}">Lista de credenciais</a>
@@ -33,14 +39,8 @@
 
     <article class="metric-card">
         <p class="metric-card__label">Inteligência</p>
-        <p class="metric-card__value">Dashboard de incidentes</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('incidente.dashboard_incidentes') }}">Dashboard de incidentes</a>
-    </article>
-
-    <article class="metric-card">
-        <p class="metric-card__label">Inteligência</p>
         <p class="metric-card__value">Dashboard de credenciais</p>
-        <a class="btn btn-outline-secondary mt-3" href="{{ url_for('dashboard.dashboard_credenciais') }}">Dashboard de credenciais</a>
+        <a class="btn btn-primary mt-3" href="{{ url_for('dashboard.dashboard_credenciais') }}">Dashboard de credenciais</a>
     </article>
 </section>
 
