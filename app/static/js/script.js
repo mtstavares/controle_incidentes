@@ -53,8 +53,8 @@ function showApplicationNotification(message, type = 'info') {
     closeButton.type = 'button';
     closeButton.className = 'app-notification__close';
     closeButton.dataset.notificationClose = '';
-    closeButton.setAttribute('aria-label', 'Fechar notifica??o');
-    closeButton.textContent = '?';
+    closeButton.setAttribute('aria-label', 'Fechar notificação');
+    closeButton.textContent = '×';
 
     notification.appendChild(content);
     notification.appendChild(closeButton);
@@ -361,12 +361,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const maxTotal = Math.max.apply(null, items.map(function (item) { return item.total; }).concat([0]));
             const hasAnyData = items.some(function (item) { return item.total > 0; });
 
-            const axis = document.createElement('div');
-            axis.className = 'credential-column-chart__axis';
-            axis.setAttribute('aria-hidden', 'true');
-            axis.innerHTML = '<span>' + maxTotal + '</span><span>' + Math.ceil(maxTotal / 2) + '</span><span>0</span>';
-            chart.appendChild(axis);
-
             const columns = document.createElement('div');
             columns.className = 'credential-column-chart__columns';
 
@@ -382,10 +376,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 bar.title = item.monthName + ' de ' + item.year + ': ' + item.total + ' credenciais';
                 bar.setAttribute('aria-label', bar.title);
 
-                const value = document.createElement('span');
-                value.className = 'credential-column-chart__value';
-                value.textContent = item.total;
-                bar.appendChild(value);
+                if (item.total > 0) {
+                    const value = document.createElement('span');
+                    value.className = 'credential-column-chart__value';
+                    value.textContent = item.total;
+                    bar.appendChild(value);
+                }
 
                 const label = document.createElement('span');
                 label.className = 'credential-column-chart__label';
@@ -704,11 +700,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const lowerName = file.name.toLowerCase();
             const extension = allowedExtensions.find(function (ext) { return lowerName.endsWith(ext); });
             if (!extension) {
-                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
+                showApplicationNotification('Tipo de arquivo não permitido.', 'danger');
                 return;
             }
             if (file.size > maxFileSize) {
-                showApplicationNotification('Tipo de arquivo n?o permitido.', 'danger');
+                showApplicationNotification('O arquivo excede o limite permitido.', 'danger');
                 return;
             }
             dataTransfer.items.add(file);

@@ -35,6 +35,9 @@ class Config:
     INCIDENT_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "incidents")
     PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
     SESSION_REFRESH_EACH_REQUEST = False
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 
 
 class DevelopmentConfig(Config):

@@ -1046,10 +1046,10 @@ def delete_incident(incident_id):
         db.session.delete(incident)
         registrar_auditoria(
             acao=AuditAction.EXCLUIR,
-            modulo="Incidentes de seguran?a",
+            modulo="Incidentes de segurança",
             entidade="Incidente",
             entidade_id=incident_id,
-            descricao=f"Incidente exclu?do: {report_number}",
+            descricao=f"Incidente excluído: {report_number}",
             commit=False,
             raise_on_error=True,
         )
@@ -1057,10 +1057,10 @@ def delete_incident(incident_id):
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao excluir incidente %s", incident_id)
-        flash("N?o foi poss?vel excluir o incidente.", "danger")
+        flash("Não foi possível excluir o incidente.", "danger")
         return redirect(url_for("incidente.incident_view", incident_id=incident_id))
 
-    flash("Incidente exclu?do com sucesso!", "success")
+    flash("Incidente excluído com sucesso!", "success")
     return redirect(url_for("incidente.incidents_list"))
 
 

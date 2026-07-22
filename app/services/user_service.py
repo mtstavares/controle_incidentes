@@ -1,7 +1,9 @@
 import re
+
 from werkzeug.security import check_password_hash, generate_password_hash
-from app import hash as legacy_hash
+
 from app import db
+from app import hash as legacy_hash
 from app.models import User
 
 
