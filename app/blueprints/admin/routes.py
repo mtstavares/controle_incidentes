@@ -853,6 +853,7 @@ def audit_logs():
             AuditAction.ADICIONAR_OBSERVACAO,
             AuditAction.EXCLUIR_OBSERVACAO,
             AuditAction.ACESSO_NEGADO,
+            AuditAction.IMPORTAR_CREDENCIAIS,
         ],
     )
 

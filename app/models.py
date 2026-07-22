@@ -181,6 +181,40 @@ class StatusIncidente(db.Model):
         return f'<StatusIncidente {self.status} - {self.desc_status}>'
     
 
+class CredencialComprometida(TimestampMixin, db.Model):
+    __tablename__ = "credenciais_comprometidas"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "cpf",
+            "email",
+            "url_origem",
+            "data_coleta",
+            name="uq_credenciais_comprometidas_dedup",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_busca = db.Column(db.String(255), nullable=False, index=True)
+    cpf = db.Column(db.String(11), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    url_origem = db.Column(db.Text, nullable=True)
+    data_coleta = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
+    permitiu_acesso = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    acesso_ad = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    acesso_ms = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    situacao_legal = db.Column(db.String(150), nullable=True)
+    situacao_legal_normalizada = db.Column(db.String(150), nullable=True, index=True)
+    observacoes = db.Column(db.Text, nullable=True)
+    mensagem_bloqueio = db.Column(db.Text, nullable=True)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    imported_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    imported_by = db.relationship("User", backref="credenciais_importadas")
+
+    def __repr__(self):
+        return f"<CredencialComprometida {self.id} - {self.cpf}>"
+
+
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
 

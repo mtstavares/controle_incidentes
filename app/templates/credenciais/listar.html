@@ -2,35 +2,242 @@
 {% from 'components/macros.html' import page_header, empty_state %}
 
 {% block content %}
-{{ page_header('Credenciais comprometidas', 'Módulo futuro para gerenciamento seguro de credenciais expostas ou suspeitas de comprometimento.') }}
+{{ page_header('Credenciais comprometidas', 'Consulta segura de credenciais expostas consolidadas pela DivCiber.') }}
 
-<section class="app-card mb-4" aria-labelledby="credenciais-info-title">
+<section class="app-card mb-4" aria-labelledby="credential-filter-title">
     <div class="app-card__header">
         <div>
-            <h2 id="credenciais-info-title" class="h5 mb-1">Funcionalidade em desenvolvimento</h2>
-            <p class="text-muted mb-0">O módulo de gerenciamento de credenciais comprometidas está em desenvolvimento.</p>
+            <h2 id="credential-filter-title" class="h5 mb-1">Filtros</h2>
         </div>
-        <button class="btn btn-outline-secondary" type="button" disabled aria-disabled="true">Nova credencial indisponível</button>
     </div>
     <div class="app-card__body">
-        <div class="filter-grid" aria-label="Filtros preparados para versão futura">
+        {% if error_message %}
+            <div class="app-notification app-notification--danger mb-3" role="alert">{{ error_message }}</div>
+        {% endif %}
+        <form method="GET" action="{{ url_for('credenciais.listar_credenciais') }}" class="filter-grid" id="credentialFilters" data-credentials-filters>
             <div class="span-4">
-                <label class="form-label" for="future-search">Pesquisar</label>
-                <input class="form-control" id="future-search" type="text" placeholder="Disponível futuramente" disabled>
+                <label class="form-label" for="q">Pesquisar por CPF ou nome</label>
+                <input class="form-control" id="q" type="search" name="q" value="{{ filtros.get('q', '') }}" maxlength="80" autocomplete="off" placeholder="Digite CPF ou nome">
             </div>
-            <div class="span-4">
-                <label class="form-label" for="future-status">Status</label>
-                <select class="form-select" id="future-status" disabled>
-                    <option>Disponível futuramente</option>
+            <div class="span-2">
+                <label class="form-label" for="start_date">Data inicial</label>
+                <input class="form-control" id="start_date" type="date" name="start_date" value="{{ filtros.get('start_date', '') }}">
+            </div>
+            <div class="span-2">
+                <label class="form-label" for="end_date">Data final</label>
+                <input class="form-control" id="end_date" type="date" name="end_date" value="{{ filtros.get('end_date', '') }}">
+            </div>
+            <div class="span-2">
+                <label class="form-label" for="access">Acesso</label>
+                <select class="form-select" id="access" name="access">
+                    <option value="" {% if not filtros.get('access') %}selected{% endif %}>Todos</option>
+                    <option value="somente_ad" {% if filtros.get('access') == 'somente_ad' %}selected{% endif %}>Somente AD</option>
+                    <option value="somente_ms" {% if filtros.get('access') == 'somente_ms' %}selected{% endif %}>Somente MS</option>
+                    <option value="ad_ms" {% if filtros.get('access') == 'ad_ms' %}selected{% endif %}>AD e MS</option>
+                    <option value="nenhum" {% if filtros.get('access') == 'nenhum' %}selected{% endif %}>Sem acesso confirmado</option>
+                    <option value="alguma_aplicacao" {% if filtros.get('access') == 'alguma_aplicacao' %}selected{% endif %}>Alguma aplicação</option>
                 </select>
             </div>
-            <div class="span-4">
-                <label class="form-label" for="future-period">Período</label>
-                <input class="form-control" id="future-period" type="date" disabled>
+            <div class="span-2">
+                <label class="form-label" for="situacao">Situação legal</label>
+                <select class="form-select" id="situacao" name="situacao">
+                    <option value="">Todas</option>
+                    {% for situacao in situacoes_legais %}
+                        <option value="{{ situacao.value }}" {% if filtros.get('situacao') == situacao.value %}selected{% endif %}>{{ situacao.label }}</option>
+                    {% endfor %}
+                </select>
             </div>
-        </div>
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="direction" value="{{ direction }}">
+            <div class="span-12 d-flex flex-column flex-sm-row justify-content-end gap-2">
+                <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('credenciais.listar_credenciais') }}">Limpar filtros</a>
+            </div>
+        </form>
     </div>
 </section>
 
-{{ empty_state('Nenhuma credencial carregada', 'Não há dados reais para exibir neste módulo enquanto a funcionalidade estiver em desenvolvimento.') }}
+<section class="app-card" aria-labelledby="credential-table-title" data-credentials-panel>
+    <div class="app-card__header">
+        <div>
+            <h2 id="credential-table-title" class="h5 mb-1">Registros importados</h2>
+            <p class="text-muted mb-0" data-credentials-total>
+                {% if pagination %}{{ pagination.total }} registro(s) encontrado(s).{% else %}Nenhum registro encontrado.{% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <div class="app-table-wrap">
+            <table class="table app-table">
+                <thead>
+                    <tr>
+                        <th class="credential-cpf-cell">CPF</th>
+                        <th>Nome</th>
+                        <th>E-mail</th>
+                        <th>Data da coleta</th>
+                        <th>Mensagem de bloqueio</th>
+                        <th>Situação legal</th>
+                    </tr>
+                </thead>
+                <tbody data-credentials-table>
+                    {% for credencial in credenciais %}
+                    <tr>
+                        <td class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</td>
+                        <td>{{ credencial.nome }}</td>
+                        <td>{{ credencial.email }}</td>
+                        <td>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</td>
+                        <td>{{ credencial.mensagem_bloqueio or '' }}</td>
+                        <td>{{ credencial.situacao_legal or '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="mobile-card-list" data-credentials-mobile>
+            {% for credencial in credenciais %}
+            <article class="mobile-record-card">
+                <h3 class="h6 mb-1">{{ credencial.nome }}</h3>
+                <dl class="record-meta">
+                    <div><dt>CPF</dt><dd class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</dd></div>
+                    <div><dt>Data da coleta</dt><dd>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</dd></div>
+                    <div><dt>E-mail</dt><dd class="user-email">{{ credencial.email }}</dd></div>
+                    <div><dt>Mensagem de bloqueio</dt><dd>{{ credencial.mensagem_bloqueio or '' }}</dd></div>
+                    <div><dt>Situação legal</dt><dd>{{ credencial.situacao_legal or '' }}</dd></div>
+                </dl>
+            </article>
+            {% endfor %}
+        </div>
+
+        <div data-credentials-empty {% if credenciais %}hidden{% endif %}>
+            {{ empty_state('Nenhuma credencial encontrada', 'Importe uma planilha ou ajuste os filtros aplicados.') }}
+        </div>
+
+        <nav class="mt-4" aria-label="Paginação das credenciais" data-credentials-pagination {% if not pagination or pagination.pages <= 1 %}hidden{% endif %}>
+            <ul class="pagination flex-wrap justify-content-end">
+                <li class="page-item {% if not pagination or not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="#" data-page="{{ pagination.prev_num if pagination and pagination.has_prev else 1 }}">Anterior</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link" data-page-label>Página {{ pagination.page if pagination else 1 }} de {{ pagination.pages if pagination else 1 }}</span></li>
+                <li class="page-item {% if not pagination or not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="#" data-page="{{ pagination.next_num if pagination and pagination.has_next else 1 }}">Próxima</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</section>
+
+<script>
+(function () {
+    const form = document.querySelector('[data-credentials-filters]');
+    if (!form) return;
+
+    const table = document.querySelector('[data-credentials-table]');
+    const mobile = document.querySelector('[data-credentials-mobile]');
+    const empty = document.querySelector('[data-credentials-empty]');
+    const total = document.querySelector('[data-credentials-total]');
+    const pagination = document.querySelector('[data-credentials-pagination]');
+    const pageLabel = document.querySelector('[data-page-label]');
+    let controller = null;
+    let debounceTimer = null;
+    let lastRequest = 0;
+
+    function escapeText(value) {
+        return String(value || '').replace(/[&<>"']/g, function (char) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char];
+        });
+    }
+
+    function paramsFromForm(page) {
+        const params = new URLSearchParams(new FormData(form));
+        if (page) params.set('page', page);
+        else params.set('page', '1');
+        for (const [key, value] of Array.from(params.entries())) {
+            if (!value) params.delete(key);
+        }
+        return params;
+    }
+
+    function renderRows(rows) {
+        table.innerHTML = rows.map(function (row) {
+            return '<tr>' +
+                '<td class="credential-cpf-cell">' + escapeText(row.cpf) + '</td>' +
+                '<td>' + escapeText(row.nome) + '</td>' +
+                '<td>' + escapeText(row.email) + '</td>' +
+                '<td>' + escapeText(row.data_coleta) + '</td>' +
+                '<td>' + escapeText(row.mensagem_bloqueio) + '</td>' +
+                '<td>' + escapeText(row.situacao_legal) + '</td>' +
+            '</tr>';
+        }).join('');
+
+        mobile.innerHTML = rows.map(function (row) {
+            return '<article class="mobile-record-card">' +
+                '<h3 class="h6 mb-1">' + escapeText(row.nome) + '</h3>' +
+                '<dl class="record-meta">' +
+                    '<div><dt>CPF</dt><dd class="credential-cpf-cell">' + escapeText(row.cpf) + '</dd></div>' +
+                    '<div><dt>Data da coleta</dt><dd>' + escapeText(row.data_coleta) + '</dd></div>' +
+                    '<div><dt>E-mail</dt><dd class="user-email">' + escapeText(row.email) + '</dd></div>' +
+                    '<div><dt>Mensagem de bloqueio</dt><dd>' + escapeText(row.mensagem_bloqueio) + '</dd></div>' +
+                    '<div><dt>Situação legal</dt><dd>' + escapeText(row.situacao_legal) + '</dd></div>' +
+                '</dl>' +
+            '</article>';
+        }).join('');
+        empty.hidden = rows.length > 0;
+    }
+
+    function renderPagination(meta) {
+        total.textContent = meta.total + ' registro(s) encontrado(s).';
+        pageLabel.textContent = 'Página ' + meta.page + ' de ' + Math.max(meta.pages, 1);
+        pagination.hidden = meta.pages <= 1;
+        const links = pagination.querySelectorAll('[data-page]');
+        links[0].dataset.page = meta.hasPrev ? meta.page - 1 : 1;
+        links[0].closest('.page-item').classList.toggle('disabled', !meta.hasPrev);
+        links[1].dataset.page = meta.hasNext ? meta.page + 1 : meta.page;
+        links[1].closest('.page-item').classList.toggle('disabled', !meta.hasNext);
+    }
+
+    function fetchCredentials(page) {
+        const requestId = ++lastRequest;
+        const params = paramsFromForm(page);
+        const url = '{{ url_for("credenciais.listar_credenciais_api") }}?' + params.toString();
+        if (controller) controller.abort();
+        controller = new AbortController();
+        history.replaceState(null, '', '{{ url_for("credenciais.listar_credenciais") }}' + (params.toString() ? '?' + params.toString() : ''));
+        fetch(url, {headers: {'Accept': 'application/json'}, signal: controller.signal})
+            .then(function (response) { return response.json().then(function (body) { return {ok: response.ok, body: body}; }); })
+            .then(function (result) {
+                if (requestId !== lastRequest) return;
+                if (!result.ok) {
+                    total.textContent = result.body.error && result.body.error.message ? result.body.error.message : 'Não foi possível consultar as credenciais.';
+                    renderRows([]);
+                    renderPagination({page: 1, pages: 1, total: 0, hasPrev: false, hasNext: false});
+                    return;
+                }
+                renderRows(result.body.data || []);
+                renderPagination(result.body.meta || {page: 1, pages: 1, total: 0, hasPrev: false, hasNext: false});
+            })
+            .catch(function (error) {
+                if (error.name === 'AbortError') return;
+                total.textContent = 'Não foi possível consultar as credenciais.';
+            });
+    }
+
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        fetchCredentials(1);
+    });
+    form.querySelectorAll('select,input[type="date"]').forEach(function (field) {
+        field.addEventListener('change', function () { fetchCredentials(1); });
+    });
+    form.querySelector('#q').addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () { fetchCredentials(1); }, 400);
+    });
+    pagination.addEventListener('click', function (event) {
+        const link = event.target.closest('[data-page]');
+        if (!link || link.closest('.page-item').classList.contains('disabled')) return;
+        event.preventDefault();
+        fetchCredentials(link.dataset.page);
+    });
+})();
+</script>
 {% endblock %}
