@@ -103,6 +103,28 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    document.querySelectorAll('[data-pm-search-form]').forEach(function (form) {
+        const input = form.querySelector('input[name="query"]');
+        if (!input) return;
+
+        const sanitize = function () {
+            input.value = input.value.replace(/\D/g, '').slice(0, 11);
+        };
+
+        input.addEventListener('input', sanitize);
+        input.addEventListener('paste', function () {
+            window.setTimeout(sanitize, 0);
+        });
+
+        form.addEventListener('submit', function (event) {
+            sanitize();
+            if (!/^\d{6}$|^\d{11}$/.test(input.value)) {
+                event.preventDefault();
+                showApplicationNotification('CPF ou RE inválido.', 'danger');
+            }
+        });
+    });
+
     const commandSelect = document.querySelector('[data-command-select]');
     const btlSelect = document.getElementById('btl_select');
     const cpaInput = document.getElementById('cpa_input');

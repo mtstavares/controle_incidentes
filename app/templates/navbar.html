@@ -44,6 +44,16 @@
         </nav>
     </div>
 
+    <div class="sidebar-section">
+        <p class="sidebar-label">Utilitários</p>
+        <nav class="sidebar-nav">
+            <a class="sidebar-link" href="{{ url_for('utilitarios.buscar_pm') }}" {% if endpoint == 'utilitarios.buscar_pm' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">P</span>
+                <span>Buscar PM</span>
+            </a>
+        </nav>
+    </div>
+
     {% if current_user.is_authenticated and current_user.profile == 'Admin' %}
     <div class="sidebar-section">
         <p class="sidebar-label">Administração</p>

@@ -35,6 +35,13 @@ class Config:
     INCIDENT_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "incidents")
     AWARENESS_UPLOAD_FOLDER = os.path.join(BASE_DIR, "instance", "uploads", "conscientizacoes")
     MAX_AWARENESS_IMAGE_SIZE = 5 * 1024 * 1024
+    PM_API_BASE_URL = os.getenv(
+        "PM_API_BASE_URL",
+        "https://webservices.intranet.policiamilitar.sp.gov.br/pmesp.cdpm/api/v1/PolicialMilitar",
+    )
+    PM_API_TIMEOUT = float(os.getenv("PM_API_TIMEOUT", "10"))
+    PM_API_CA_BUNDLE = os.getenv("PM_API_CA_BUNDLE")
+    PM_SEARCH_CACHE_TTL_SECONDS = int(os.getenv("PM_SEARCH_CACHE_TTL_SECONDS", "300"))
     PERMANENT_SESSION_LIFETIME = timedelta(hours=5)
     SESSION_REFRESH_EACH_REQUEST = False
     SESSION_COOKIE_HTTPONLY = True

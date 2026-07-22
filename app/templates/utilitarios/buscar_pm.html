@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-section" aria-labelledby="buscar-pm-title">
+    <div class="page-section__header">
+        <div>
+            <p class="eyebrow">Utilitários</p>
+            <h1 id="buscar-pm-title">Buscar PM</h1>
+        </div>
+    </div>
+
+    <form class="filter-panel pm-search-form" method="POST" action="{{ url_for('utilitarios.buscar_pm') }}" data-pm-search-form novalidate>
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="form-field">
+            <label for="pm_query">CPF ou RE</label>
+            <input
+                class="form-control"
+                id="pm_query"
+                name="query"
+                inputmode="numeric"
+                autocomplete="off"
+                pattern="[0-9]{6}|[0-9]{11}"
+                maxlength="11"
+                value="{{ query or '' }}"
+                placeholder="Digite o CPF ou RE do Policial Militar"
+                {% if current_user.profile == 'Viewer' %}aria-describedby="pm-viewer-help"{% endif %}
+                required
+            >
+            {% if current_user.profile == 'Viewer' %}
+                <p id="pm-viewer-help" class="form-text text-muted">
+                    Seu perfil possui apenas permissão de visualização. A consulta de policiais militares é permitida apenas para usuários Admin e User.
+                </p>
+            {% else %}
+                <p class="form-text text-muted">Informe 6 dígitos para RE ou 11 dígitos para CPF.</p>
+            {% endif %}
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit" {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar</button>
+        </div>
+    </form>
+
+    {% if result %}
+        <div class="pm-result-grid">
+            <article class="pm-card pm-card--identity">
+                <div class="pm-photo">
+                    {% if result.foto_data_uri %}
+                        <img src="{{ result.foto_data_uri }}" alt="Foto do policial militar">
+                    {% else %}
+                        <span>Sem foto</span>
+                    {% endif %}
+                </div>
+                <div class="pm-card__body">
+                    <h2>Dados do Policial</h2>
+                    <dl class="pm-detail-list">
+                        <div><dt>Nome</dt><dd>{{ result.dados.nome }}</dd></div>
+                        <div><dt>Nome de Guerra</dt><dd>{{ result.dados.nome_guerra }}</dd></div>
+                        <div><dt>Posto/Graduação</dt><dd>{{ result.dados.posto }}</dd></div>
+                        <div><dt>RE</dt><dd>{{ result.dados.re }}</dd></div>
+                        <div><dt>CPF</dt><dd>{{ result.dados.cpf }}</dd></div>
+                        <div><dt>Situação Legal</dt><dd>{{ result.dados.situacao_legal }}</dd></div>
+                        <div><dt>Data de nascimento</dt><dd>{{ result.dados.data_nascimento }}</dd></div>
+                        <div><dt>OPM completa</dt><dd>{{ result.dados.opm }}</dd></div>
+                        <div><dt>Código OPM</dt><dd>{{ result.dados.codigo_opm }}</dd></div>
+                    </dl>
+                </div>
+            </article>
+
+            <article class="pm-card">
+                <h2>Contato</h2>
+                <dl class="pm-detail-list">
+                    <div><dt>Email funcional</dt><dd>{{ result.contato.email }}</dd></div>
+                    <div><dt>Telefone</dt><dd>{{ result.contato.telefone }}</dd></div>
+                </dl>
+            </article>
+
+            <article class="pm-card">
+                <h2>Documentos</h2>
+                <dl class="pm-detail-list">
+                    <div><dt>RG</dt><dd>{{ result.documentos.rg }}</dd></div>
+                    <div><dt>CNH</dt><dd>{{ result.documentos.cnh }}</dd></div>
+                    <div><dt>Categoria</dt><dd>{{ result.documentos.categoria }}</dd></div>
+                    <div><dt>Validade</dt><dd>{{ result.documentos.validade }}</dd></div>
+                </dl>
+            </article>
+
+            <article class="pm-card">
+                <h2>Características Físicas</h2>
+                <dl class="pm-detail-list">
+                    <div><dt>Estatura</dt><dd>{{ result.caracteristicas.estatura }}</dd></div>
+                    <div><dt>Cabelo</dt><dd>{{ result.caracteristicas.cabelo }}</dd></div>
+                    <div><dt>Olhos</dt><dd>{{ result.caracteristicas.olhos }}</dd></div>
+                    <div><dt>Cútis</dt><dd>{{ result.caracteristicas.cutis }}</dd></div>
+                    <div><dt>Tipo sanguíneo</dt><dd>{{ result.caracteristicas.tipo_sanguineo }}</dd></div>
+                </dl>
+            </article>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

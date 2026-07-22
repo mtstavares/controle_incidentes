@@ -92,6 +92,7 @@ def create_app(config_class=ProductionConfig):
     from app.blueprints.conscientizacoes import conscientizacoes_bp
     from app.blueprints.dashboard import dashboard_bp
     from app.blueprints.admin import admin_bp
+    from app.blueprints.utilitarios import utilitarios_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(incidente_bp)
@@ -99,6 +100,7 @@ def create_app(config_class=ProductionConfig):
     app.register_blueprint(credenciais_bp)
     app.register_blueprint(conscientizacoes_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(utilitarios_bp)
     app.register_blueprint(admin_bp)
 
     lm.login_view = "users.login"
