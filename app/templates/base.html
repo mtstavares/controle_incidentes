@@ -54,7 +54,7 @@
                     <div class="content-wrap">
                         {% with messages = get_flashed_messages(with_categories=true) %}
                             {% if messages %}
-                                <section class="app-notification-stack mb-4" aria-label="Mensagens do sistema" data-notification-container>
+                                <section class="app-notification-stack" aria-label="Mensagens do sistema" data-notification-container>
                                     {% for category, message in messages %}
                                         <div
                                             class="app-notification app-notification--{{ category }}"
