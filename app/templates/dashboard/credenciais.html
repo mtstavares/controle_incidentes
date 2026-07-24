@@ -23,9 +23,18 @@
                 </select>
             </div>
             <div class="span-3">
-                <label for="credentialDashboardMonth" class="form-label">Mês</label>
-                <select class="form-select" id="credentialDashboardMonth" name="month" data-credential-dashboard-month>
-                    <option value="all" selected>Todos os meses</option>
+                <label for="credentialDashboardStartMonth" class="form-label">Mês inicial</label>
+                <select class="form-select" id="credentialDashboardStartMonth" name="start_month" data-credential-dashboard-start-month>
+                    <option value="" selected>Automático</option>
+                    {% for number, label in months.items() %}
+                        <option value="{{ number }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="credentialDashboardEndMonth" class="form-label">Mês final</label>
+                <select class="form-select" id="credentialDashboardEndMonth" name="end_month" data-credential-dashboard-end-month>
+                    <option value="" selected>Automático</option>
                     {% for number, label in months.items() %}
                         <option value="{{ number }}">{{ label }}</option>
                     {% endfor %}
@@ -42,25 +51,25 @@
     <div class="app-card__body">
         <div class="metric-grid credential-dashboard-cards" aria-label="Indicadores de credenciais">
             <article class="metric-card">
-                <span class="metric-card__label">Credenciais localizadas</span>
+                <span class="metric-card__label">Credenciais localizadas</span><br>
                 <strong class="metric-card__value" data-credential-card="located">0</strong>
             </article>
             <article class="metric-card">
-                <span class="metric-card__label">Com acesso positivo</span>
+                <span class="metric-card__label">Com acesso positivo</span><br>
                 <strong class="metric-card__value" data-credential-card="positive">0</strong>
             </article>
             <article class="metric-card">
-                <span class="metric-card__label">Sem acesso positivo</span>
+                <span class="metric-card__label">Sem acesso positivo</span><br>
                 <strong class="metric-card__value" data-credential-card="without-access">0</strong>
             </article>
             <article class="metric-card">
-                <span class="metric-card__label">Taxa de acesso positivo</span>
+                <span class="metric-card__label">Taxa de acesso positivo</span><br>
                 <strong class="metric-card__value" data-credential-card="positive-rate">0%</strong>
             </article>
         </div>
 
         <div class="dashboard-warning mt-3" data-credential-dashboard-warning hidden>
-            Total consolidado mensal ainda não informado para uma ou mais competências exibidas.
+            Total consolidado mensal ainda não informado para uma ou mais competências exibidas com acesso positivo.
         </div>
 
         <div class="dashboard-loading" data-credential-dashboard-loading role="status" aria-live="polite" hidden>
@@ -75,7 +84,7 @@
         </div>
 
         <div data-credential-dashboard-empty hidden>
-            {{ empty_state('Nenhuma contabilização encontrada para o período.', 'As competências sem total consolidado permanecem visíveis com valor zero.') }}
+            {{ empty_state('Nenhuma contabilização encontrada para o período.', 'As competências sem total consolidado permanecem visíveis com valor zero quando selecionadas no filtro.') }}
         </div>
 
         <div class="app-notification app-notification--danger" data-credential-dashboard-error role="alert" hidden>

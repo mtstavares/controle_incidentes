@@ -26,7 +26,7 @@ MONTHS_PT_BR = {
 
 MIN_DASHBOARD_YEAR = 2000
 MAX_DASHBOARD_YEAR = 2100
-ALLOWED_DASHBOARD_PARAMS = {"year", "month"}
+ALLOWED_DASHBOARD_PARAMS = {"year", "month", "start_month", "end_month"}
 
 
 def _available_credential_years():
@@ -55,6 +55,15 @@ def _available_credential_years():
     return sorted(years, reverse=True)
 
 
+def _parse_month_filter(value, field_label):
+    raw_value = (value or "").strip().lower()
+    if raw_value in {"", "all", "todos"}:
+        return None
+    if raw_value.isdigit() and 1 <= int(raw_value) <= 12:
+        return int(raw_value)
+    raise ValueError(f"{field_label} informado é inválido.")
+
+
 def _validate_dashboard_filters(args):
     unexpected = set(args.keys()) - ALLOWED_DASHBOARD_PARAMS
     if unexpected:
@@ -70,18 +79,21 @@ def _validate_dashboard_filters(args):
     if year < MIN_DASHBOARD_YEAR or year > MAX_DASHBOARD_YEAR:
         raise ValueError("Ano informado está fora do intervalo permitido.")
 
-    raw_month = args.get("month", "all").strip().lower()
-    if raw_month in {"", "all", "todos"}:
-        month = None
-    elif raw_month.isdigit() and 1 <= int(raw_month) <= 12:
-        month = int(raw_month)
-    else:
-        raise ValueError("Mês informado é inválido.")
+    # Mantém compatibilidade com o filtro antigo `month` e habilita o novo intervalo.
+    month = _parse_month_filter(args.get("month", "all"), "Mês")
+    start_month = _parse_month_filter(args.get("start_month", ""), "Mês inicial")
+    end_month = _parse_month_filter(args.get("end_month", ""), "Mês final")
 
-    return year, month, years
+    if month is not None:
+        start_month = month
+        end_month = month
+    if start_month is not None and end_month is not None and start_month > end_month:
+        raise ValueError("Mês inicial não pode ser posterior ao mês final.")
+
+    return year, start_month, end_month, years
 
 
-def _count_positive_credentials_by_month(year, month=None):
+def _count_positive_credentials_by_month(year, start_month=None, end_month=None):
     month_expr = func.strftime("%m", CredencialComprometida.data_coleta)
     year_expr = func.strftime("%Y", CredencialComprometida.data_coleta)
     query = (
@@ -96,24 +108,38 @@ def _count_positive_credentials_by_month(year, month=None):
             )
         )
     )
-    if month:
-        query = query.filter(month_expr == f"{month:02d}")
+    if start_month is not None:
+        query = query.filter(month_expr >= f"{start_month:02d}")
+    if end_month is not None:
+        query = query.filter(month_expr <= f"{end_month:02d}")
 
     rows = query.group_by(month_expr).order_by(month_expr.asc()).all()
     return {int(row.month): int(row.total) for row in rows if row.month}
 
 
-def _monthly_collected_totals(year, month=None):
-    query = CredencialColetaMensal.query.filter_by(ano_referencia=year).filter(CredencialColetaMensal.deleted_at.is_(None))
-    if month:
-        query = query.filter_by(mes_referencia=month)
+def _monthly_collected_totals(year, start_month=None, end_month=None):
+    query = CredencialColetaMensal.query.filter_by(ano_referencia=year).filter(
+        CredencialColetaMensal.deleted_at.is_(None)
+    )
+    if start_month is not None:
+        query = query.filter(CredencialColetaMensal.mes_referencia >= start_month)
+    if end_month is not None:
+        query = query.filter(CredencialColetaMensal.mes_referencia <= end_month)
     return {row.mes_referencia: int(row.quantidade_localizada) for row in query.all()}
 
 
-def _count_credentials_by_month(year, month=None):
-    positive_totals = _count_positive_credentials_by_month(year, month)
-    collected_totals = _monthly_collected_totals(year, month)
-    months = [month] if month else list(range(1, 13))
+def _months_for_dashboard(collected_totals, positive_totals, start_month=None, end_month=None):
+    if start_month is not None or end_month is not None:
+        first_month = start_month or 1
+        last_month = end_month or 12
+        return list(range(first_month, last_month + 1))
+    return sorted(set(collected_totals.keys()) | set(positive_totals.keys())) or list(range(1, 13))
+
+
+def _count_credentials_by_month(year, start_month=None, end_month=None):
+    positive_totals = _count_positive_credentials_by_month(year, start_month, end_month)
+    collected_totals = _monthly_collected_totals(year, start_month, end_month)
+    months = _months_for_dashboard(collected_totals, positive_totals, start_month, end_month)
 
     items = []
     for item in months:
@@ -168,7 +194,7 @@ def _dashboard_summary(items):
         "competencias_sem_contabilizacao": [
             {"year": item["year"], "month": item["month"]}
             for item in items
-            if not item["contabilizacao_cadastrada"]
+            if not item["contabilizacao_cadastrada"] and item["credenciais_com_acesso"] > 0
         ],
         "competencias_inconsistentes": [
             {"year": item["year"], "month": item["month"]}
@@ -218,8 +244,8 @@ def dashboard_credenciais():
 @login_required
 def api_dashboard_credenciais():
     try:
-        year, month, years = _validate_dashboard_filters(request.args)
-        items = _count_credentials_by_month(year, month)
+        year, start_month, end_month, years = _validate_dashboard_filters(request.args)
+        items = _count_credentials_by_month(year, start_month, end_month)
         summary = _dashboard_summary(items)
         invalid_dates = _invalid_collection_date_count()
         if invalid_dates:
@@ -235,7 +261,10 @@ def api_dashboard_credenciais():
             alteracoes={
                 "data_coleta": {
                     "anterior": None,
-                    "novo": f"ano={year}; mes={month or 'todos'}; datas_invalidas={invalid_dates}",
+                    "novo": (
+                        f"ano={year}; mes_inicial={start_month or 'auto'}; "
+                        f"mes_final={end_month or 'auto'}; datas_invalidas={invalid_dates}"
+                    ),
                 }
             },
         )
@@ -246,7 +275,9 @@ def api_dashboard_credenciais():
                 "error": None,
                 "meta": {
                     "year": year,
-                    "month": month or "all",
+                    "month": start_month if start_month == end_month and start_month is not None else "all",
+                    "startMonth": start_month,
+                    "endMonth": end_month,
                     "years": years,
                     "invalidCollectionDates": invalid_dates,
                 },

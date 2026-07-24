@@ -273,11 +273,11 @@ class CompromisedCredentialsTest(unittest.TestCase):
 
     def test_credentials_dashboard_empty_database_returns_zero_months(self):
         self.login()
-        response = self.client.get("/api/dashboard/credenciais?year=2026&month=all")
+        response = self.client.get("/api/dashboard/credenciais?year=2026&start_month=1&end_month=3")
         payload = response.get_json()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(payload["data"]), 12)
+        self.assertEqual(len(payload["data"]), 3)
         self.assertTrue(all(item["total"] == 0 for item in payload["data"]))
         self.assertEqual(payload["data"][0]["monthName"], "Janeiro")
         self.assertNotIn("cpf", str(payload).lower())
@@ -367,7 +367,7 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.add_credential(cpf="11144477735", email="marco@test.com", data_coleta=datetime(2026, 3, 1, 0, 0, 0), permitiu_acesso=True)
         self.add_credential(cpf="39053344705", email="outroano@test.com", data_coleta=datetime(2025, 1, 1, 0, 0, 0), acesso_ad=True)
 
-        response = self.client.get("/api/dashboard/credenciais?year=2026&month=all")
+        response = self.client.get("/api/dashboard/credenciais?year=2026&start_month=1&end_month=3")
         payload = response.get_json()
         totals = {item["month"]: item["total"] for item in payload["data"]}
 
@@ -376,6 +376,23 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertEqual(totals[2], 0)
         self.assertEqual(totals[3], 1)
         self.assertEqual(sum(totals.values()), 3)
+
+    def test_credentials_dashboard_auto_months_do_not_warn_for_unregistered_empty_months(self):
+        self.login()
+        self.add_monthly_total(2026, 1, 717)
+        self.add_monthly_total(2026, 2, 309)
+        self.add_monthly_total(2026, 3, 579)
+        self.add_monthly_total(2026, 4, 1863)
+        self.add_monthly_total(2026, 5, 2188)
+        self.add_monthly_total(2026, 6, 1580)
+        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 1, 10, 8, 30, 0), acesso_ad=True)
+
+        response = self.client.get("/api/dashboard/credenciais?year=2026")
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["month"] for item in payload["data"]], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(payload["summary"]["competencias_sem_contabilizacao"], [])
 
     def test_credentials_dashboard_filters_specific_month(self):
         self.login()
@@ -416,6 +433,8 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.login()
         self.assertEqual(self.client.get("/api/dashboard/credenciais?year=2026;drop&month=all").status_code, 400)
         self.assertEqual(self.client.get("/api/dashboard/credenciais?year=2026&month=13").status_code, 400)
+        self.assertEqual(self.client.get("/api/dashboard/credenciais?year=2026&start_month=6&end_month=5").status_code, 400)
+        self.assertEqual(self.client.get("/api/dashboard/credenciais?year=2026&start_month=janeiro").status_code, 400)
         self.assertEqual(self.client.get("/api/dashboard/credenciais?year=2026&month=all&sort=cpf").status_code, 400)
 
     def test_credentials_dashboard_requires_login(self):

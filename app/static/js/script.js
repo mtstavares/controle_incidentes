@@ -366,7 +366,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (credentialDashboard && credentialDashboardForm) {
         const endpoint = credentialDashboard.getAttribute('data-endpoint');
         const yearSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-year]');
-        const monthSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-month]');
+        const startMonthSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-start-month]');
+        const endMonthSelect = credentialDashboardForm.querySelector('[data-credential-dashboard-end-month]');
         const chart = credentialDashboard.querySelector('[data-credential-dashboard-chart]');
         const loading = credentialDashboard.querySelector('[data-credential-dashboard-loading]');
         const emptyState = credentialDashboard.querySelector('[data-credential-dashboard-empty]');
@@ -406,25 +407,54 @@ document.addEventListener('DOMContentLoaded', function () {
             const params = new URLSearchParams(window.location.search);
             const year = params.get('year');
             const month = params.get('month');
+            const startMonth = params.get('start_month');
+            const endMonth = params.get('end_month');
             if (year && yearSelect && Array.from(yearSelect.options).some(function (option) { return option.value === year; })) {
                 yearSelect.value = year;
             }
-            if (month && monthSelect && Array.from(monthSelect.options).some(function (option) { return option.value === month; })) {
-                monthSelect.value = month;
+            if (month && month !== 'all') {
+                if (startMonthSelect && Array.from(startMonthSelect.options).some(function (option) { return option.value === month; })) {
+                    startMonthSelect.value = month;
+                }
+                if (endMonthSelect && Array.from(endMonthSelect.options).some(function (option) { return option.value === month; })) {
+                    endMonthSelect.value = month;
+                }
+                return;
+            }
+            if (startMonth && startMonthSelect && Array.from(startMonthSelect.options).some(function (option) { return option.value === startMonth; })) {
+                startMonthSelect.value = startMonth;
+            }
+            if (endMonth && endMonthSelect && Array.from(endMonthSelect.options).some(function (option) { return option.value === endMonth; })) {
+                endMonthSelect.value = endMonth;
             }
         };
 
         const buildDashboardUrl = function () {
             const params = new URLSearchParams();
             params.set('year', yearSelect.value);
-            params.set('month', monthSelect.value || 'all');
+            if (startMonthSelect && startMonthSelect.value) {
+                params.set('start_month', startMonthSelect.value);
+            }
+            if (endMonthSelect && endMonthSelect.value) {
+                params.set('end_month', endMonthSelect.value);
+            }
             return endpoint + '?' + params.toString();
         };
 
         const updateDashboardBrowserUrl = function () {
             const url = new URL(window.location.href);
             url.searchParams.set('year', yearSelect.value);
-            url.searchParams.set('month', monthSelect.value || 'all');
+            url.searchParams.delete('month');
+            if (startMonthSelect && startMonthSelect.value) {
+                url.searchParams.set('start_month', startMonthSelect.value);
+            } else {
+                url.searchParams.delete('start_month');
+            }
+            if (endMonthSelect && endMonthSelect.value) {
+                url.searchParams.set('end_month', endMonthSelect.value);
+            } else {
+                url.searchParams.delete('end_month');
+            }
             window.history.replaceState({}, '', url);
         };
 
@@ -528,7 +558,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         applyUrlFiltersToFields();
-        [yearSelect, monthSelect].forEach(function (select) {
+        [yearSelect, startMonthSelect, endMonthSelect].forEach(function (select) {
             if (select) {
                 select.addEventListener('change', loadCredentialDashboard);
             }
