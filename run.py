@@ -11,6 +11,7 @@ os.makedirs("logs", exist_ok=True)
 from app import create_app, db
 from app.models import StatusIncidente, TipoIncidente, Unidades, User
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.credential_monthly_totals import seed_historical_monthly_totals
 from app.services.user_service import gerar_hash_senha
 from config import DevelopmentConfig
 
@@ -73,10 +74,17 @@ def bootstrap_local_database():
                 db.session.add(Unidades(cpa=cpa, btl=btl))
 
         seed_result = seed_development_organizational_units(commit=False)
+        credential_totals_result = seed_historical_monthly_totals(commit=False)
         db.session.commit()
         print(
             "Seed de unidades organizacionais concluída: "
             f"{seed_result['created']} criadas, {seed_result['existing']} já existentes."
+        )
+        print(
+            "Seed de totais mensais de credenciais concluido: "
+            f"{credential_totals_result['created']} criados, "
+            f"{credential_totals_result['updated']} atualizados, "
+            f"{credential_totals_result['unchanged']} sem alteracao."
         )
         print("Banco de dados e tabelas criados com sucesso.")
         print("Script de criação do banco de dados concluído.")

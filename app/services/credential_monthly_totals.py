@@ -84,11 +84,21 @@ def upsert_monthly_total(year, month, total, *, commit=True):
 
 
 def seed_historical_monthly_totals(*, commit=True):
-    records = []
+    stats = {"created": 0, "updated": 0, "unchanged": 0}
     for year, months in HISTORICAL_MONTHLY_TOTALS.items():
         for month, total in months.items():
-            records.append(upsert_monthly_total(year, month, total, commit=False))
+            existing = CredencialColetaMensal.query.filter_by(
+                ano_referencia=year,
+                mes_referencia=month,
+            ).one_or_none()
+            if existing is None:
+                stats["created"] += 1
+            elif existing.quantidade_localizada != total:
+                stats["updated"] += 1
+            else:
+                stats["unchanged"] += 1
+            upsert_monthly_total(year, month, total, commit=False)
 
     if commit:
         db.session.commit()
-    return records
+    return stats
