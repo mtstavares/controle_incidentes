@@ -37,17 +37,45 @@
 
 <section class="app-card" aria-labelledby="credential-dashboard-chart-title" data-credential-dashboard data-endpoint="{{ url_for('dashboard.api_dashboard_credenciais') }}">
     <div class="app-card__header">
-        <h2 id="credential-dashboard-chart-title" class="h5 mb-0">Credenciais coletadas por mês</h2>
+        <h2 id="credential-dashboard-chart-title" class="h5 mb-0">Credenciais por mês</h2>
     </div>
     <div class="app-card__body">
+        <div class="metric-grid credential-dashboard-cards" aria-label="Indicadores de credenciais">
+            <article class="metric-card">
+                <span class="metric-card__label">Credenciais localizadas</span>
+                <strong class="metric-card__value" data-credential-card="located">0</strong>
+            </article>
+            <article class="metric-card">
+                <span class="metric-card__label">Com acesso positivo</span>
+                <strong class="metric-card__value" data-credential-card="positive">0</strong>
+            </article>
+            <article class="metric-card">
+                <span class="metric-card__label">Sem acesso positivo</span>
+                <strong class="metric-card__value" data-credential-card="without-access">0</strong>
+            </article>
+            <article class="metric-card">
+                <span class="metric-card__label">Taxa de acesso positivo</span>
+                <strong class="metric-card__value" data-credential-card="positive-rate">0%</strong>
+            </article>
+        </div>
+
+        <div class="dashboard-warning mt-3" data-credential-dashboard-warning hidden>
+            Total consolidado mensal ainda não informado para uma ou mais competências exibidas.
+        </div>
+
         <div class="dashboard-loading" data-credential-dashboard-loading role="status" aria-live="polite" hidden>
             Carregando dados do dashboard...
         </div>
 
-        <div class="credential-column-chart" data-credential-dashboard-chart aria-label="Gráfico de colunas com credenciais coletadas por mês"></div>
+        <div class="credential-column-chart" data-credential-dashboard-chart aria-label="Gráfico de colunas com credenciais localizadas por mês"></div>
+
+        <div class="credential-chart-legend" aria-label="Legenda do gráfico de credenciais">
+            <span><i class="credential-chart-legend__swatch credential-chart-legend__swatch--positive"></i>Com acesso positivo</span>
+            <span><i class="credential-chart-legend__swatch credential-chart-legend__swatch--without"></i>Sem acesso positivo</span>
+        </div>
 
         <div data-credential-dashboard-empty hidden>
-            {{ empty_state('Nenhuma credencial encontrada para o período.', 'Os meses sem ocorrências permanecem no gráfico com valor zero.') }}
+            {{ empty_state('Nenhuma contabilização encontrada para o período.', 'As competências sem total consolidado permanecem visíveis com valor zero.') }}
         </div>
 
         <div class="app-notification app-notification--danger" data-credential-dashboard-error role="alert" hidden>

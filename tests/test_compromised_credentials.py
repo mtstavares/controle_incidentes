@@ -4,11 +4,18 @@ from io import BytesIO
 from unittest.mock import patch
 
 import pandas as pd
+from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
 from app import create_app, db, hash
-from app.models import CredencialComprometida, User
+from app.models import CredencialColetaMensal, CredencialComprometida, User
 from app.services.credential_service import import_credential_spreadsheet, is_valid_cpf, normalize_cpf
+from app.services.credential_monthly_totals import (
+    HISTORICAL_MONTHLY_TOTALS,
+    MonthlyCredentialTotalValidationError,
+    seed_historical_monthly_totals,
+    upsert_monthly_total,
+)
 
 
 class TestConfig:
@@ -58,7 +65,17 @@ class CompromisedCredentialsTest(unittest.TestCase):
     def fake_upload(self):
         return FileStorage(stream=BytesIO(b"fake excel"), filename="credenciais.xlsx")
 
-    def add_credential(self, *, cpf, nome="Pessoa Teste", email="pessoa@test.com", data_coleta=None):
+    def add_credential(
+        self,
+        *,
+        cpf,
+        nome="Pessoa Teste",
+        email="pessoa@test.com",
+        data_coleta=None,
+        permitiu_acesso=False,
+        acesso_ad=False,
+        acesso_ms=False,
+    ):
         record = CredencialComprometida(
             nome=nome,
             nome_busca=nome.lower(),
@@ -66,9 +83,9 @@ class CompromisedCredentialsTest(unittest.TestCase):
             email=email,
             url_origem="https://origem.example/vazamento",
             data_coleta=data_coleta,
-            permitiu_acesso=False,
-            acesso_ad=False,
-            acesso_ms=False,
+            permitiu_acesso=permitiu_acesso,
+            acesso_ad=acesso_ad,
+            acesso_ms=acesso_ms,
             situacao_legal="Bloqueado",
             situacao_legal_normalizada="bloqueado",
             observacoes="Observação sintética",
@@ -77,6 +94,9 @@ class CompromisedCredentialsTest(unittest.TestCase):
         db.session.add(record)
         db.session.commit()
         return record
+
+    def add_monthly_total(self, year, month, total):
+        return upsert_monthly_total(year, month, total)
 
     def valid_dataframe(self):
         return pd.DataFrame([{
@@ -199,6 +219,58 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertTrue(is_valid_cpf("52998224725"))
         self.assertFalse(is_valid_cpf("11111111111"))
 
+    def test_monthly_total_upsert_creates_and_updates_competence(self):
+        created = self.add_monthly_total(2026, 7, 10)
+        self.assertEqual(created.quantidade_localizada, 10)
+
+        updated = self.add_monthly_total(2026, 7, 15)
+        self.assertEqual(updated.id, created.id)
+        self.assertEqual(CredencialColetaMensal.query.count(), 1)
+        self.assertEqual(CredencialColetaMensal.query.one().quantidade_localizada, 15)
+
+    def test_historical_monthly_totals_seed_is_idempotent(self):
+        seed_historical_monthly_totals()
+        first_count = CredencialColetaMensal.query.count()
+        seed_historical_monthly_totals()
+        second_count = CredencialColetaMensal.query.count()
+
+        self.assertEqual(first_count, 18)
+        self.assertEqual(second_count, 18)
+        self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2025, mes_referencia=1).one().quantidade_localizada, 2307)
+        self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2026, mes_referencia=6).one().quantidade_localizada, 1580)
+
+    def test_monthly_total_unique_constraint(self):
+        db.session.add(CredencialColetaMensal(ano_referencia=2026, mes_referencia=7, quantidade_localizada=10))
+        db.session.add(CredencialColetaMensal(ano_referencia=2026, mes_referencia=7, quantidade_localizada=20))
+        with self.assertRaises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+    def test_monthly_total_strict_validation_rejects_invalid_values(self):
+        invalid_cases = [
+            (2026, 0, 10),
+            (2026, 13, 10),
+            (1999, 1, 10),
+            (2026, 1, -1),
+            (2026, 1, 12.5),
+            (2026, True, 10),
+            (2026, 1, True),
+            (2026, "janeiro", 10),
+            (2026, 1, "2307 credenciais"),
+        ]
+        for year, month, total in invalid_cases:
+            with self.subTest(year=year, month=month, total=total):
+                with self.assertRaises(MonthlyCredentialTotalValidationError):
+                    upsert_monthly_total(year, month, total)
+
+    def test_historical_values_are_available_for_2025_and_2026(self):
+        seed_historical_monthly_totals()
+        for year, months in HISTORICAL_MONTHLY_TOTALS.items():
+            for month, total in months.items():
+                with self.subTest(year=year, month=month):
+                    record = CredencialColetaMensal.query.filter_by(ano_referencia=year, mes_referencia=month).one()
+                    self.assertEqual(record.quantidade_localizada, total)
+
     def test_credentials_dashboard_empty_database_returns_zero_months(self):
         self.login()
         response = self.client.get("/api/dashboard/credenciais?year=2026&month=all")
@@ -211,12 +283,89 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertNotIn("cpf", str(payload).lower())
         self.assertNotIn("email", str(payload).lower())
 
+    def test_credentials_dashboard_does_not_sum_historical_total_with_positives(self):
+        self.login()
+        self.add_monthly_total(2025, 1, 2307)
+        for index in range(120):
+            self.add_credential(
+                cpf=f"{index:011d}",
+                email=f"pessoa{index}@test.local",
+                data_coleta=datetime(2025, 1, 10, 8, 30, 0),
+                acesso_ad=True,
+                acesso_ms=index % 2 == 0,
+            )
+
+        response = self.client.get("/api/dashboard/credenciais?year=2025&month=1")
+        payload = response.get_json()
+        item = payload["data"][0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(item["credenciais_localizadas"], 2307)
+        self.assertEqual(item["credenciais_com_acesso"], 120)
+        self.assertEqual(item["credenciais_sem_acesso"], 2187)
+        self.assertEqual(payload["summary"]["credenciais_localizadas"], 2307)
+        self.assertNotEqual(item["credenciais_localizadas"], 2427)
+
+    def test_credentials_dashboard_positive_ad_and_ms_counts_one_credential(self):
+        self.login()
+        self.add_monthly_total(2026, 1, 717)
+        self.add_credential(
+            cpf="52998224725",
+            data_coleta=datetime(2026, 1, 10, 8, 30, 0),
+            acesso_ad=True,
+            acesso_ms=True,
+        )
+
+        payload = self.client.get("/api/dashboard/credenciais?year=2026&month=1").get_json()
+        self.assertEqual(payload["data"][0]["credenciais_com_acesso"], 1)
+        self.assertEqual(payload["data"][0]["credenciais_sem_acesso"], 716)
+
+    def test_credentials_dashboard_missing_monthly_total_keeps_positive_and_warns(self):
+        self.login()
+        self.add_credential(cpf="52998224725", data_coleta=datetime(2027, 1, 10, 8, 30, 0), acesso_ad=True)
+
+        with self.assertLogs(level="WARNING") as captured:
+            response = self.client.get("/api/dashboard/credenciais?year=2027&month=1")
+
+        item = response.get_json()["data"][0]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(item["credenciais_localizadas"], 0)
+        self.assertEqual(item["credenciais_com_acesso"], 1)
+        self.assertEqual(item["credenciais_sem_acesso"], 0)
+        self.assertFalse(item["contabilizacao_cadastrada"])
+        self.assertIn("positivos sem total consolidado", "\n".join(captured.output))
+
+    def test_credentials_dashboard_inconsistency_when_positive_exceeds_collected_total(self):
+        self.login()
+        self.add_monthly_total(2026, 2, 1)
+        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 2, 10, 8, 30, 0), acesso_ad=True)
+        self.add_credential(cpf="16899535009", email="dois@test.local", data_coleta=datetime(2026, 2, 11, 8, 30, 0), acesso_ms=True)
+
+        with self.assertLogs(level="ERROR") as captured:
+            response = self.client.get("/api/dashboard/credenciais?year=2026&month=2")
+
+        item = response.get_json()["data"][0]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(item["credenciais_localizadas"], 1)
+        self.assertEqual(item["credenciais_com_acesso"], 2)
+        self.assertEqual(item["credenciais_sem_acesso"], 0)
+        self.assertTrue(item["inconsistente"])
+        self.assertIn("Inconsistência no dashboard de credenciais", "\n".join(captured.output))
+
+    def test_credentials_dashboard_zero_total_has_zero_access_rate(self):
+        self.login()
+        self.add_monthly_total(2026, 9, 0)
+        payload = self.client.get("/api/dashboard/credenciais?year=2026&month=9").get_json()
+
+        self.assertEqual(payload["data"][0]["taxa_acesso_positivo"], 0)
+        self.assertEqual(payload["summary"]["taxa_acesso_positivo"], 0)
+
     def test_credentials_dashboard_groups_by_month_and_keeps_zero_months(self):
         self.login()
-        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 1, 10, 8, 30, 0))
-        self.add_credential(cpf="16899535009", email="outra@test.com", data_coleta=datetime(2026, 1, 20, 9, 0, 0))
-        self.add_credential(cpf="11144477735", email="marco@test.com", data_coleta=datetime(2026, 3, 1, 0, 0, 0))
-        self.add_credential(cpf="39053344705", email="outroano@test.com", data_coleta=datetime(2025, 1, 1, 0, 0, 0))
+        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 1, 10, 8, 30, 0), acesso_ad=True)
+        self.add_credential(cpf="16899535009", email="outra@test.com", data_coleta=datetime(2026, 1, 20, 9, 0, 0), acesso_ms=True)
+        self.add_credential(cpf="11144477735", email="marco@test.com", data_coleta=datetime(2026, 3, 1, 0, 0, 0), permitiu_acesso=True)
+        self.add_credential(cpf="39053344705", email="outroano@test.com", data_coleta=datetime(2025, 1, 1, 0, 0, 0), acesso_ad=True)
 
         response = self.client.get("/api/dashboard/credenciais?year=2026&month=all")
         payload = response.get_json()
@@ -230,18 +379,23 @@ class CompromisedCredentialsTest(unittest.TestCase):
 
     def test_credentials_dashboard_filters_specific_month(self):
         self.login()
-        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 7, 2, 12, 0, 0))
-        self.add_credential(cpf="16899535009", email="agosto@test.com", data_coleta=datetime(2026, 8, 2, 12, 0, 0))
+        self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 7, 2, 12, 0, 0), acesso_ad=True)
+        self.add_credential(cpf="16899535009", email="agosto@test.com", data_coleta=datetime(2026, 8, 2, 12, 0, 0), acesso_ad=True)
 
         response = self.client.get("/api/dashboard/credenciais?year=2026&month=7")
         payload = response.get_json()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(payload["data"], [{"month": 7, "monthName": "Julho", "year": 2026, "total": 1}])
+        self.assertEqual(len(payload["data"]), 1)
+        self.assertEqual(payload["data"][0]["month"], 7)
+        self.assertEqual(payload["data"][0]["monthName"], "Julho")
+        self.assertEqual(payload["data"][0]["year"], 2026)
+        self.assertEqual(payload["data"][0]["total"], 1)
+        self.assertEqual(payload["data"][0]["credenciais_com_acesso"], 1)
 
     def test_credentials_dashboard_reflects_insert_update_and_delete(self):
         self.login()
-        record = self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 5, 1, 0, 0, 0))
+        record = self.add_credential(cpf="52998224725", data_coleta=datetime(2026, 5, 1, 0, 0, 0), acesso_ad=True)
 
         first = self.client.get("/api/dashboard/credenciais?year=2026&month=5").get_json()
         self.assertEqual(first["data"][0]["total"], 1)

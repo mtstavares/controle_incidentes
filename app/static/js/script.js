@@ -371,6 +371,15 @@ document.addEventListener('DOMContentLoaded', function () {
         const loading = credentialDashboard.querySelector('[data-credential-dashboard-loading]');
         const emptyState = credentialDashboard.querySelector('[data-credential-dashboard-empty]');
         const errorState = credentialDashboard.querySelector('[data-credential-dashboard-error]');
+        const warningState = credentialDashboard.querySelector('[data-credential-dashboard-warning]');
+        const cards = {
+            located: credentialDashboard.querySelector('[data-credential-card="located"]'),
+            positive: credentialDashboard.querySelector('[data-credential-card="positive"]'),
+            withoutAccess: credentialDashboard.querySelector('[data-credential-card="without-access"]'),
+            positiveRate: credentialDashboard.querySelector('[data-credential-card="positive-rate"]')
+        };
+        const numberFormatter = new Intl.NumberFormat('pt-BR');
+        const percentFormatter = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
         let activeController = null;
 
         const setDashboardState = function (state) {
@@ -379,6 +388,18 @@ document.addEventListener('DOMContentLoaded', function () {
             if (errorState) errorState.hidden = state !== 'error';
             if (chart) chart.hidden = state === 'error';
             if (chart) chart.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        };
+
+        const updateCredentialCards = function (summary) {
+            const data = summary || {};
+            if (cards.located) cards.located.textContent = numberFormatter.format(data.credenciais_localizadas || 0);
+            if (cards.positive) cards.positive.textContent = numberFormatter.format(data.credenciais_com_acesso || 0);
+            if (cards.withoutAccess) cards.withoutAccess.textContent = numberFormatter.format(data.credenciais_sem_acesso || 0);
+            if (cards.positiveRate) cards.positiveRate.textContent = percentFormatter.format(data.taxa_acesso_positivo || 0) + '%';
+            if (warningState) {
+                const missing = data.competencias_sem_contabilizacao || [];
+                warningState.hidden = missing.length === 0;
+            }
         };
 
         const applyUrlFiltersToFields = function () {
@@ -409,8 +430,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const renderCredentialColumnChart = function (items) {
             chart.textContent = '';
-            const maxTotal = Math.max.apply(null, items.map(function (item) { return item.total; }).concat([0]));
-            const hasAnyData = items.some(function (item) { return item.total > 0; });
+            const maxTotal = Math.max.apply(null, items.map(function (item) {
+                return Math.max(item.credenciais_localizadas || 0, item.credenciais_com_acesso || 0);
+            }).concat([0]));
+            const hasAnyData = items.some(function (item) {
+                return (item.credenciais_localizadas || 0) > 0 || (item.credenciais_com_acesso || 0) > 0;
+            });
 
             const columns = document.createElement('div');
             columns.className = 'credential-column-chart__columns';
@@ -419,20 +444,41 @@ document.addEventListener('DOMContentLoaded', function () {
                 const column = document.createElement('div');
                 column.className = 'credential-column-chart__item';
 
+                const located = item.credenciais_localizadas || 0;
+                const positive = item.credenciais_com_acesso || 0;
+                const withoutAccess = item.credenciais_sem_acesso || 0;
+                const stackTotal = Math.max(located, positive);
+
                 const bar = document.createElement('div');
-                bar.className = 'credential-column-chart__bar';
-                const height = maxTotal > 0 ? Math.max((item.total / maxTotal) * 100, item.total > 0 ? 5 : 0) : 0;
+                bar.className = 'credential-column-chart__bar credential-column-chart__bar--stacked';
+                const height = maxTotal > 0 ? Math.max((stackTotal / maxTotal) * 100, stackTotal > 0 ? 5 : 0) : 0;
                 bar.style.height = height + '%';
                 bar.tabIndex = 0;
-                bar.title = item.monthName + ' de ' + item.year + ': ' + item.total + ' credenciais';
+                bar.title = item.monthName + ' de ' + item.year
+                    + ': ' + numberFormatter.format(located) + ' localizadas; '
+                    + numberFormatter.format(positive) + ' com acesso; '
+                    + numberFormatter.format(withoutAccess) + ' sem acesso.';
                 bar.setAttribute('aria-label', bar.title);
 
-                if (item.total > 0) {
+                if (stackTotal > 0) {
                     const value = document.createElement('span');
                     value.className = 'credential-column-chart__value';
-                    value.textContent = item.total;
+                    value.textContent = numberFormatter.format(located);
                     bar.appendChild(value);
                 }
+
+                const withoutSegment = document.createElement('span');
+                withoutSegment.className = 'credential-column-chart__segment credential-column-chart__segment--without';
+                withoutSegment.style.height = stackTotal > 0 ? Math.max((withoutAccess / stackTotal) * 100, withoutAccess > 0 ? 3 : 0) + '%' : '0%';
+                withoutSegment.title = 'Sem acesso positivo: ' + numberFormatter.format(withoutAccess);
+
+                const positiveSegment = document.createElement('span');
+                positiveSegment.className = 'credential-column-chart__segment credential-column-chart__segment--positive';
+                positiveSegment.style.height = stackTotal > 0 ? Math.max((positive / stackTotal) * 100, positive > 0 ? 3 : 0) + '%' : '0%';
+                positiveSegment.title = 'Com acesso positivo: ' + numberFormatter.format(positive);
+
+                bar.appendChild(withoutSegment);
+                bar.appendChild(positiveSegment);
 
                 const label = document.createElement('span');
                 label.className = 'credential-column-chart__label';
@@ -469,11 +515,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!response.ok || payload.error) {
                     throw new Error(payload.error && payload.error.message ? payload.error.message : 'Erro no dashboard');
                 }
+                updateCredentialCards(payload.summary || {});
                 renderCredentialColumnChart(payload.data || []);
                 updateDashboardBrowserUrl();
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     chart.textContent = '';
+                    updateCredentialCards({});
                     setDashboardState('error');
                 }
             }
