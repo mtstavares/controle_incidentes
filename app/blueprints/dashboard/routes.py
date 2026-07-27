@@ -4,7 +4,7 @@ from sqlalchemy import func
 
 from app import db
 from app.blueprints.dashboard import dashboard_bp
-from app.models import CredencialColetaMensal, CredencialComprometida
+from app.models import CredencialColetaMensal, CredencialComprometida, CredencialImportLote
 from app.services.audit_service import AuditAction, registrar_auditoria
 from app.services.timezone_service import local_now
 
@@ -33,7 +33,15 @@ def _available_credential_years():
     year_expr = func.strftime("%Y", CredencialComprometida.data_coleta)
     credential_rows = (
         db.session.query(year_expr.label("year"))
+        .outerjoin(CredencialImportLote, CredencialComprometida.lote_id == CredencialImportLote.id)
         .filter(CredencialComprometida.data_coleta.isnot(None))
+        .filter(CredencialComprometida.deleted_at.is_(None))
+        .filter(
+            db.or_(
+                CredencialComprometida.lote_id.is_(None),
+                CredencialImportLote.status == "ativo",
+            )
+        )
         .filter(year_expr.isnot(None))
         .group_by(year_expr)
         .all()
@@ -98,8 +106,16 @@ def _count_positive_credentials_by_month(year, start_month=None, end_month=None)
     year_expr = func.strftime("%Y", CredencialComprometida.data_coleta)
     query = (
         db.session.query(month_expr.label("month"), func.count(CredencialComprometida.id).label("total"))
+        .outerjoin(CredencialImportLote, CredencialComprometida.lote_id == CredencialImportLote.id)
         .filter(CredencialComprometida.data_coleta.isnot(None))
+        .filter(CredencialComprometida.deleted_at.is_(None))
         .filter(year_expr == str(year))
+        .filter(
+            db.or_(
+                CredencialComprometida.lote_id.is_(None),
+                CredencialImportLote.status == "ativo",
+            )
+        )
         .filter(
             db.or_(
                 CredencialComprometida.permitiu_acesso.is_(True),
@@ -208,10 +224,18 @@ def _invalid_collection_date_count():
     year_expr = func.strftime("%Y", CredencialComprometida.data_coleta)
     return (
         db.session.query(func.count(CredencialComprometida.id))
+        .outerjoin(CredencialImportLote, CredencialComprometida.lote_id == CredencialImportLote.id)
         .filter(
             db.or_(
                 CredencialComprometida.data_coleta.is_(None),
                 year_expr.is_(None),
+            )
+        )
+        .filter(CredencialComprometida.deleted_at.is_(None))
+        .filter(
+            db.or_(
+                CredencialComprometida.lote_id.is_(None),
+                CredencialImportLote.status == "ativo",
             )
         )
         .scalar()

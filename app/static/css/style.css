@@ -708,6 +708,26 @@ h1 {
   gap: var(--space-4);
 }
 
+.credential-import-card .app-card__body {
+  padding: var(--space-5);
+}
+
+.credential-import-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.credential-import-form__field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.credential-import-form__actions {
+  flex: 0 0 180px;
+}
+
 .span-2 { grid-column: span 2; }
 .span-3 { grid-column: span 3; }
 .span-4 { grid-column: span 4; }
@@ -1745,6 +1765,15 @@ h1 {
   .span-8,
   .span-12 {
     grid-column: 1 / -1;
+  }
+
+  .credential-import-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .credential-import-form__actions {
+    flex-basis: auto;
   }
 
   .app-table-wrap {

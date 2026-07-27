@@ -1,17 +1,24 @@
+import hashlib
+import hmac
+import json
+import os
 import re
 import tempfile
 import unicodedata
+import uuid
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from pathlib import Path
 
 import pandas as pd
 from flask import current_app
+from openpyxl import load_workbook
 from sqlalchemy import and_, or_
 from werkzeug.utils import secure_filename
 
 from app import db
-from app.models import CredencialComprometida
+from app.models import CredencialColetaMensal, CredencialComprometida, CredencialImportLote
 from app.services.timezone_service import APP_TIMEZONE, utc_now
 
 
@@ -45,6 +52,30 @@ OPTIONAL_COLUMNS = {
     "observacoes": "OBSERVAÇÕES",
 }
 
+MONTHLY_REQUIRED_SHEETS = ("Credenciais AD", "Credenciais MS", "Total")
+MONTHLY_POSITIVE_SHEETS = ("Credenciais AD", "Credenciais MS")
+MONTHLY_SHEET_REQUIRED_COLUMNS = {
+    "nome",
+    "cpf",
+    "senha",
+    "email",
+    "url",
+    "data_coleta",
+    "quantidade_identificacoes",
+    "data_identificacoes",
+    "fonte",
+    "acesso_ad",
+    "acesso_ms",
+    "situacao_legal",
+}
+MONTHLY_POSITIVE_REQUIRED_COLUMNS = {
+    "observacoes",
+    "mensagem_bloqueio_rds",
+}
+MONTHLY_PREVIEW_DIR = "credential_import_previews"
+MONTHLY_BATCH_ACTIVE = "ativo"
+MONTHLY_BATCH_REPLACED = "substituido"
+
 COLUMN_ALIASES = {
     "nome": "nome",
     "cpf": "cpf",
@@ -55,8 +86,22 @@ COLUMN_ALIASES = {
     "acesso ad": "acesso_ad",
     "acesso ms": "acesso_ms",
     "situacao legal": "situacao_legal",
+    "situa o legal": "situacao_legal",
     "observacoes": "observacoes",
+    "observa es": "observacoes",
     "msg bloqueio": "mensagem_bloqueio",
+    "msg bloqueio.": "mensagem_bloqueio",
+    "msg bloqueio rds": "mensagem_bloqueio_rds",
+    "mensagem de bloqueio rds": "mensagem_bloqueio_rds",
+    "mensagem bloqueio rds": "mensagem_bloqueio_rds",
+    "mnesagem de bloqueio rds": "mensagem_bloqueio_rds",
+    "mnesagem bloqueio rds": "mensagem_bloqueio_rds",
+    "rds": "rds",
+    "quantidade de identificacoes": "quantidade_identificacoes",
+    "quantidade de identifica es": "quantidade_identificacoes",
+    "data das identificacoes": "data_identificacoes",
+    "data das identifica es": "data_identificacoes",
+    "fonte": "fonte",
     "senha": "senha",
 }
 
@@ -78,6 +123,52 @@ class ImportSummary:
 
 
 MISSING_INFORMATION_TEXT = "Não foi possível encontrar informações"
+
+
+@dataclass
+class MonthlyImportPreview:
+    token: str
+    file_hash: str
+    original_filename: str
+    year: int
+    month: int
+    total_tested: int
+    total_validated: int
+    only_ad: int
+    only_ms: int
+    ad_and_ms: int
+    not_validated: int
+    positive_records: list[dict] = field(default_factory=list)
+    errors: list[dict] = field(default_factory=list)
+    warnings: list[dict] = field(default_factory=list)
+    ignored_password_column: bool = False
+
+    @property
+    def can_confirm(self):
+        return not self.errors
+
+    def to_dict(self):
+        return {
+            "token": self.token,
+            "file_hash": self.file_hash,
+            "original_filename": self.original_filename,
+            "year": self.year,
+            "month": self.month,
+            "total_tested": self.total_tested,
+            "total_validated": self.total_validated,
+            "only_ad": self.only_ad,
+            "only_ms": self.only_ms,
+            "ad_and_ms": self.ad_and_ms,
+            "not_validated": self.not_validated,
+            "positive_records": self.positive_records,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "ignored_password_column": self.ignored_password_column,
+        }
+
+    @classmethod
+    def from_dict(cls, payload):
+        return cls(**payload)
 
 
 def normalize_text(value, *, max_length=None, preserve_newlines=False):
@@ -555,6 +646,462 @@ def import_credential_spreadsheet(storage, user_id=None):
                 current_app.logger.warning("Não foi possível remover arquivo temporário de credenciais.")
 
 
+def validate_reference_year(year):
+    if isinstance(year, bool):
+        raise ValueError("Ano de referencia invalido.")
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        raise ValueError("Ano de referencia invalido.")
+    if year < 2000 or year > 2100:
+        raise ValueError("Ano de referencia invalido.")
+    return year
+
+
+def _monthly_preview_dir():
+    path = Path(current_app.instance_path) / "tmp" / MONTHLY_PREVIEW_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _monthly_preview_path(token):
+    if not re.fullmatch(r"[a-f0-9]{32}", str(token or "")):
+        raise ValueError("Token de importacao invalido.")
+    return _monthly_preview_dir() / f"{token}.json"
+
+
+def _save_monthly_preview(preview):
+    path = _monthly_preview_path(preview.token)
+    path.write_text(json.dumps(preview.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
+
+
+def load_monthly_import_preview(token):
+    path = _monthly_preview_path(token)
+    if not path.exists():
+        raise ValueError("Previa de importacao expirada ou inexistente.")
+    return MonthlyImportPreview.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def delete_monthly_import_preview(token):
+    try:
+        _monthly_preview_path(token).unlink(missing_ok=True)
+    except OSError:
+        current_app.logger.warning("Nao foi possivel remover previa temporaria de credenciais.")
+
+
+def _validate_monthly_xlsx(storage):
+    filename = secure_filename(storage.filename or "")
+    if Path(filename).suffix.lower() != ".xlsx":
+        raise ValueError("Envie a planilha mensal no formato .xlsx.")
+    stream = storage.stream
+    position = stream.tell()
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(0)
+    if size <= 0:
+        raise ValueError("A planilha enviada esta vazia.")
+    if size > MAX_SPREADSHEET_SIZE:
+        raise ValueError("A planilha excede o tamanho maximo permitido.")
+    signature = stream.read(4)
+    stream.seek(position)
+    if signature != b"PK\x03\x04":
+        raise ValueError("A planilha enviada nao possui assinatura XLSX valida.")
+    return filename
+
+
+def _copy_upload_to_temp(storage):
+    filename = _validate_monthly_xlsx(storage)
+    temp_dir = Path(current_app.instance_path) / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_dir) as temp_file:
+        temp_path = Path(temp_file.name)
+        storage.stream.seek(0)
+        while True:
+            chunk = storage.stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            temp_file.write(chunk)
+    return temp_path, filename, digest.hexdigest()
+
+
+def _assert_xlsx_has_no_macros(path):
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = {name.lower() for name in archive.namelist()}
+    except zipfile.BadZipFile:
+        raise ValueError("A planilha enviada esta corrompida.")
+    if any(name.endswith("vbaproject.bin") for name in names):
+        raise ValueError("Arquivos com macro nao sao permitidos.")
+
+
+def _worksheet_header_map(ws):
+    headers = {}
+    duplicated = set()
+    for col in range(1, ws.max_column + 1):
+        normalized = normalize_column_name(ws.cell(1, col).value)
+        if not normalized:
+            continue
+        if normalized in headers:
+            duplicated.add(normalized)
+        headers[normalized] = col
+    return headers, duplicated
+
+
+def _cell_by_key(ws, row, header_map, key):
+    col = header_map.get(key)
+    if not col:
+        return None
+    return ws.cell(row, col).value
+
+
+def _iter_sheet_rows(ws, header_map):
+    for row in range(2, ws.max_row + 1):
+        values = [_cell_by_key(ws, row, header_map, key) for key in MONTHLY_SHEET_REQUIRED_COLUMNS]
+        if all(value is None or str(value).strip() == "" for value in values):
+            continue
+        yield row
+
+
+def _row_has_formula_outside_password(ws, row, header_map):
+    password_col = header_map.get("senha")
+    for col in range(1, ws.max_column + 1):
+        if col == password_col:
+            continue
+        value = ws.cell(row, col).value
+        if isinstance(value, str) and value.startswith("="):
+            return True
+    return False
+
+
+def _infer_competence_from_filename(filename):
+    key = normalize_key(Path(filename or "").stem)
+    month_aliases = {
+        "jan": 1,
+        "janeiro": 1,
+        "fev": 2,
+        "fevereiro": 2,
+        "mar": 3,
+        "marco": 3,
+        "abr": 4,
+        "abril": 4,
+        "mai": 5,
+        "maio": 5,
+        "jun": 6,
+        "junho": 6,
+        "jul": 7,
+        "julho": 7,
+        "ago": 8,
+        "agosto": 8,
+        "set": 9,
+        "setembro": 9,
+        "out": 10,
+        "outubro": 10,
+        "nov": 11,
+        "novembro": 11,
+        "dez": 12,
+        "dezembro": 12,
+    }
+    matches = []
+    for alias, month in month_aliases.items():
+        for match in re.finditer(rf"\b{alias}\s*(\d{{2}}|20\d{{2}})\b", key):
+            year = int(match.group(1))
+            matches.append((validate_reference_year(year + 2000 if year < 100 else year), month))
+    unique = set(matches)
+    if len(unique) != 1:
+        raise ValueError("Nao foi possivel identificar a competencia pelo nome do arquivo. Use o padrao Credenciais_JUL26.xlsx.")
+    return next(iter(unique))
+
+
+def _normalize_month_date(value, year, month):
+    if value is None or str(value).strip() == "":
+        return None
+    raw = str(value).strip()
+    if re.fullmatch(r"\d{1,2}[A-Za-z]{3}", raw):
+        raw = f"{raw}{str(year)[-2:]}"
+    parsed = parse_collection_date(raw)
+    if parsed and parsed.year == year and parsed.month == month:
+        return parsed
+    return None
+
+
+def _fingerprint_for_credential(cpf, password, year, month):
+    password_text = "" if password is None else str(password)
+    message = f"{cpf}|{password_text}|{year:04d}-{month:02d}".encode("utf-8")
+    secret = str(current_app.config.get("SECRET_KEY") or "").encode("utf-8")
+    return hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+
+def _monthly_record_from_row(ws, row, header_map, year, month, sheet_name):
+    cpf = normalize_cpf(_cell_by_key(ws, row, header_map, "cpf"))
+    password = _cell_by_key(ws, row, header_map, "senha")
+    data_coleta = _normalize_month_date(_cell_by_key(ws, row, header_map, "data_coleta"), year, month)
+    acesso_ad, acesso_ad_error = normalize_bool_strict(_cell_by_key(ws, row, header_map, "acesso_ad"))
+    acesso_ms, acesso_ms_error = normalize_bool_strict(_cell_by_key(ws, row, header_map, "acesso_ms"))
+    errors = []
+    if not is_valid_cpf(cpf):
+        errors.append("CPF invalido")
+    if password is None or str(password).strip() == "":
+        errors.append("senha ausente para deduplicacao em memoria")
+    if not data_coleta:
+        errors.append("data de coleta fora da competencia ou invalida")
+    if acesso_ad_error:
+        errors.append("ACESSO AD ambiguo")
+    if acesso_ms_error:
+        errors.append("ACESSO MS ambiguo")
+
+    fingerprint = _fingerprint_for_credential(cpf, password, year, month) if cpf and password else ""
+    email = normalize_email(_cell_by_key(ws, row, header_map, "email")) or EMAIL_NOT_FOUND
+    if email != EMAIL_NOT_FOUND and not is_valid_email(email):
+        email = EMAIL_NOT_FOUND
+    mensagem_bloqueio_rds = _missing_to_default(
+        _cell_by_key(ws, row, header_map, "mensagem_bloqueio_rds"),
+        max_length=1000,
+        preserve_newlines=True,
+    )
+    record = {
+        "source_sheet": sheet_name,
+        "source_line": row,
+        "fingerprint": fingerprint,
+        "nome": _missing_to_default(_cell_by_key(ws, row, header_map, "nome"), max_length=255),
+        "nome_busca": "",
+        "cpf": cpf,
+        "email": email,
+        "url_origem": _missing_to_default(_cell_by_key(ws, row, header_map, "url"), max_length=2000),
+        "data_coleta": data_coleta.isoformat() if data_coleta else None,
+        "permitiu_acesso": acesso_ad or acesso_ms,
+        "acesso_ad": acesso_ad,
+        "acesso_ms": acesso_ms,
+        "situacao_legal": _missing_to_default(_cell_by_key(ws, row, header_map, "situacao_legal"), max_length=150),
+        "situacao_legal_normalizada": "",
+        "observacoes": _missing_to_default(
+            _cell_by_key(ws, row, header_map, "observacoes"),
+            max_length=4000,
+            preserve_newlines=True,
+        ),
+        "mensagem_bloqueio": mensagem_bloqueio_rds,
+        "rds": None,
+    }
+    record["nome_busca"] = normalize_key(record["nome"])
+    record["situacao_legal_normalizada"] = normalize_key(record["situacao_legal"])
+    return record, errors
+
+
+def _merge_monthly_positive(existing, incoming):
+    existing["acesso_ad"] = bool(existing.get("acesso_ad")) or bool(incoming.get("acesso_ad"))
+    existing["acesso_ms"] = bool(existing.get("acesso_ms")) or bool(incoming.get("acesso_ms"))
+    existing["permitiu_acesso"] = existing["acesso_ad"] or existing["acesso_ms"]
+    for field in (
+        "nome",
+        "nome_busca",
+        "email",
+        "url_origem",
+        "data_coleta",
+        "situacao_legal",
+        "situacao_legal_normalizada",
+        "observacoes",
+        "mensagem_bloqueio",
+        "rds",
+    ):
+        if _is_more_complete(incoming.get(field), existing.get(field)):
+            existing[field] = incoming[field]
+    existing.setdefault("source_lines", []).append({
+        "sheet": incoming.get("source_sheet"),
+        "line": incoming.get("source_line"),
+    })
+
+
+def build_monthly_import_preview(storage):
+    temp_path = None
+    try:
+        temp_path, original_filename, file_hash = _copy_upload_to_temp(storage)
+        year, month = _infer_competence_from_filename(original_filename)
+        _assert_xlsx_has_no_macros(temp_path)
+        workbook = load_workbook(temp_path, read_only=False, data_only=False)
+        try:
+            missing_sheets = [sheet for sheet in MONTHLY_REQUIRED_SHEETS if sheet not in workbook.sheetnames]
+            if missing_sheets:
+                raise ValueError(f"Abas obrigatorias ausentes: {', '.join(missing_sheets)}.")
+            preview = MonthlyImportPreview(
+                token=uuid.uuid4().hex,
+                file_hash=file_hash,
+                original_filename=original_filename,
+                year=year,
+                month=month,
+                total_tested=0,
+                total_validated=0,
+                only_ad=0,
+                only_ms=0,
+                ad_and_ms=0,
+                not_validated=0,
+                ignored_password_column=True,
+            )
+            sheet_maps = {}
+            for sheet_name in MONTHLY_REQUIRED_SHEETS:
+                ws = workbook[sheet_name]
+                if ws.merged_cells.ranges:
+                    preview.errors.append({"aba": sheet_name, "linha": "-", "motivo": "celulas mescladas nao permitidas"})
+                header_map, duplicated = _worksheet_header_map(ws)
+                if duplicated:
+                    preview.errors.append({"aba": sheet_name, "linha": 1, "motivo": "cabecalhos duplicados"})
+                required_columns = set(MONTHLY_SHEET_REQUIRED_COLUMNS)
+                if sheet_name in MONTHLY_POSITIVE_SHEETS:
+                    required_columns |= MONTHLY_POSITIVE_REQUIRED_COLUMNS
+                missing = sorted(required_columns - set(header_map))
+                if missing:
+                    preview.errors.append({"aba": sheet_name, "linha": 1, "motivo": "cabecalhos obrigatorios ausentes: " + ", ".join(missing)})
+                sheet_maps[sheet_name] = header_map
+
+            total_keys = set()
+            total_ws = workbook["Total"]
+            total_map = sheet_maps["Total"]
+            for row in _iter_sheet_rows(total_ws, total_map):
+                if _row_has_formula_outside_password(total_ws, row, total_map):
+                    preview.errors.append({"aba": "Total", "linha": row, "motivo": "formula nao permitida"})
+                    continue
+                record, errors = _monthly_record_from_row(total_ws, row, total_map, year, month, "Total")
+                if errors:
+                    preview.errors.append({"aba": "Total", "linha": row, "motivo": "; ".join(errors)})
+                    continue
+                total_keys.add(record["fingerprint"])
+
+            positives = {}
+            for sheet_name in MONTHLY_POSITIVE_SHEETS:
+                ws = workbook[sheet_name]
+                header_map = sheet_maps[sheet_name]
+                for row in _iter_sheet_rows(ws, header_map):
+                    if _row_has_formula_outside_password(ws, row, header_map):
+                        preview.errors.append({"aba": sheet_name, "linha": row, "motivo": "formula nao permitida"})
+                        continue
+                    record, errors = _monthly_record_from_row(ws, row, header_map, year, month, sheet_name)
+                    expected_positive = record["acesso_ad"] if sheet_name.endswith("AD") else record["acesso_ms"]
+                    if not expected_positive:
+                        errors.append("linha da aba positiva sem acesso confirmado")
+                    if errors:
+                        preview.errors.append({"aba": sheet_name, "linha": row, "motivo": "; ".join(errors)})
+                        continue
+                    if record["fingerprint"] not in total_keys:
+                        preview.warnings.append({"aba": sheet_name, "linha": row, "motivo": "credencial positiva ausente na aba Total"})
+                    existing = positives.get(record["fingerprint"])
+                    if existing:
+                        _merge_monthly_positive(existing, record)
+                    else:
+                        record["source_lines"] = [{"sheet": sheet_name, "line": row}]
+                        positives[record["fingerprint"]] = record
+                    if record.get("mensagem_bloqueio") == MISSING_INFORMATION_TEXT:
+                        preview.errors.append({"aba": sheet_name, "linha": row, "motivo": "MSG BLOQUEIO - RDS ausente"})
+
+            preview.total_tested = len(total_keys)
+            preview.positive_records = list(positives.values())
+            preview.total_validated = len(preview.positive_records)
+            preview.only_ad = sum(1 for item in preview.positive_records if item["acesso_ad"] and not item["acesso_ms"])
+            preview.only_ms = sum(1 for item in preview.positive_records if item["acesso_ms"] and not item["acesso_ad"])
+            preview.ad_and_ms = sum(1 for item in preview.positive_records if item["acesso_ad"] and item["acesso_ms"])
+            preview.not_validated = max(preview.total_tested - preview.total_validated, 0)
+            _save_monthly_preview(preview)
+            return preview
+        finally:
+            workbook.close()
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                current_app.logger.warning("Nao foi possivel remover arquivo temporario de credenciais.")
+
+
+def _active_batch_for_competence(year, month):
+    return CredencialImportLote.query.filter_by(
+        ano_referencia=year,
+        mes_referencia=month,
+        status=MONTHLY_BATCH_ACTIVE,
+    ).one_or_none()
+
+
+def confirm_monthly_import(token, *, user_id=None):
+    preview = load_monthly_import_preview(token)
+    if not preview.can_confirm:
+        raise ValueError("A previa possui erros e nao pode ser importada.")
+    existing_hash = CredencialImportLote.query.filter_by(arquivo_sha256=preview.file_hash).one_or_none()
+    if existing_hash:
+        raise ValueError("Esta planilha ja foi importada anteriormente.")
+
+    now = utc_now()
+    previous = _active_batch_for_competence(preview.year, preview.month)
+    last_version = (
+        db.session.query(db.func.max(CredencialImportLote.versao))
+        .filter_by(ano_referencia=preview.year, mes_referencia=preview.month)
+        .scalar()
+        or 0
+    )
+    batch = CredencialImportLote(
+        arquivo_nome_original=preview.original_filename,
+        arquivo_sha256=preview.file_hash,
+        ano_referencia=preview.year,
+        mes_referencia=preview.month,
+        imported_at=now,
+        imported_by_id=user_id,
+        total_testado=preview.total_tested,
+        total_validado=preview.total_validated,
+        total_somente_ad=preview.only_ad,
+        total_somente_ms=preview.only_ms,
+        total_ad_ms=preview.ad_and_ms,
+        total_nao_validado=preview.not_validated,
+        rejeitados=len(preview.errors),
+        status=MONTHLY_BATCH_ACTIVE,
+        versao=last_version + 1,
+        lote_substituido_id=previous.id if previous else None,
+    )
+    db.session.add(batch)
+    db.session.flush()
+
+    if previous:
+        previous.status = MONTHLY_BATCH_REPLACED
+        previous.deleted_at = now
+        CredencialComprometida.query.filter_by(lote_id=previous.id).update({"deleted_at": now})
+
+    for item in preview.positive_records:
+        data_coleta = datetime.fromisoformat(item["data_coleta"])
+        db.session.add(CredencialComprometida(
+            nome=item["nome"],
+            nome_busca=item["nome_busca"],
+            cpf=item["cpf"],
+            email=item["email"],
+            url_origem=item["url_origem"],
+            data_coleta=data_coleta,
+            permitiu_acesso=item["permitiu_acesso"],
+            acesso_ad=item["acesso_ad"],
+            acesso_ms=item["acesso_ms"],
+            situacao_legal=item["situacao_legal"],
+            situacao_legal_normalizada=item["situacao_legal_normalizada"],
+            observacoes=item["observacoes"],
+            mensagem_bloqueio=item["mensagem_bloqueio"],
+            rds=item.get("rds"),
+            credencial_fingerprint=item["fingerprint"],
+            lote_id=batch.id,
+            imported_at=now,
+            imported_by_id=user_id,
+        ))
+
+    monthly_total = CredencialColetaMensal.query.filter_by(
+        ano_referencia=preview.year,
+        mes_referencia=preview.month,
+    ).one_or_none()
+    if monthly_total is None:
+        db.session.add(CredencialColetaMensal(
+            ano_referencia=preview.year,
+            mes_referencia=preview.month,
+            quantidade_localizada=preview.total_tested,
+        ))
+    else:
+        monthly_total.quantidade_localizada = preview.total_tested
+
+    db.session.commit()
+    delete_monthly_import_preview(token)
+    return batch
+
+
 def apply_credential_filters(query, args):
     search = (args.get("q") or "").strip()[:MAX_SEARCH_LENGTH]
     start_date = parse_collection_date(args.get("start_date"))
@@ -622,12 +1169,22 @@ def order_credentials(query, args):
 
 def credential_to_table_dict(item):
     data_coleta = item.data_coleta.strftime("%d/%m/%Y") if item.data_coleta else ""
+    if item.acesso_ad and item.acesso_ms:
+        sistema = "AD/MS"
+    elif item.acesso_ad:
+        sistema = "AD"
+    elif item.acesso_ms:
+        sistema = "MS"
+    else:
+        sistema = ""
     return {
         "id": item.id,
         "cpf": format_cpf(item.cpf),
         "data_coleta": data_coleta,
         "nome": item.nome,
         "email": item.email,
+        "sistema": sistema,
+        "rds": item.rds or "",
         "mensagem_bloqueio": item.mensagem_bloqueio or "",
         "situacao_legal": item.situacao_legal or "",
     }
