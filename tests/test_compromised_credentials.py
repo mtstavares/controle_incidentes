@@ -320,8 +320,25 @@ class CompromisedCredentialsTest(unittest.TestCase):
 
     def test_cpf_normalization_and_validation(self):
         self.assertEqual(normalize_cpf("052.998.224-725"), "052998224725")
+        self.assertEqual(normalize_cpf("0000000191"), "00000000191")
         self.assertTrue(is_valid_cpf("52998224725"))
         self.assertFalse(is_valid_cpf("11111111111"))
+
+    def test_positive_import_accepts_excel_lost_cpf_zero_and_portuguese_compact_date(self):
+        df = self.valid_2024_dataframe().iloc[[0]].copy()
+        df.loc[0, "CPF"] = "0000000191"
+        df.loc[0, "DATA COLETA"] = "10ABR24"
+
+        with patch("app.services.credential_service._read_spreadsheet", return_value=df):
+            summary = import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+
+        self.assertEqual(summary.imported, 1)
+        record = CredencialComprometida.query.one()
+        self.assertEqual(record.cpf, "00000000191")
+        self.assertEqual(record.data_coleta.year, 2024)
+        self.assertEqual(record.data_coleta.month, 4)
+        self.assertEqual(record.data_coleta.day, 10)
 
     def test_monthly_total_upsert_creates_and_updates_competence(self):
         created = self.add_monthly_total(2026, 7, 10)
