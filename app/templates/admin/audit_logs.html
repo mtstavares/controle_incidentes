@@ -50,8 +50,19 @@
 
 {% if logs %}
 <section aria-label="Tabela de logs de auditoria">
-    <div class="app-table-wrap">
-        <table class="table app-table">
+    <div class="app-table-wrap audit-table-wrap">
+        <table class="table app-table audit-table">
+            <colgroup>
+                <col class="audit-table__date">
+                <col class="audit-table__user">
+                <col class="audit-table__action">
+                <col class="audit-table__module">
+                <col class="audit-table__entity">
+                <col class="audit-table__record">
+                <col class="audit-table__result">
+                <col class="audit-table__ip">
+                <col class="audit-table__detail">
+            </colgroup>
             <thead>
                 <tr>
                     <th>Data/hora UTC</th>
