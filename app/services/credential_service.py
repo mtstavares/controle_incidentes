@@ -69,9 +69,14 @@ class ImportSummary:
     total_rows: int = 0
     imported: int = 0
     updated: int = 0
+    duplicates_ignored: int = 0
     rejected: int = 0
     ignored_password_column: bool = False
     errors: list[dict] = field(default_factory=list)
+    positive_by_month: dict[int, int] = field(default_factory=dict)
+
+
+MISSING_INFORMATION_TEXT = "Não foi possível encontrar informações"
 
 
 def normalize_text(value, *, max_length=None, preserve_newlines=False):
@@ -160,6 +165,17 @@ def normalize_bool(value):
     return False
 
 
+def normalize_bool_strict(value):
+    key = normalize_key(value)
+    if not key:
+        return False, None
+    if key in TRUE_VALUES:
+        return True, None
+    if key in FALSE_VALUES:
+        return False, None
+    return False, "valor de acesso ambiguo"
+
+
 def parse_collection_date(value):
     if value is None or pd.isna(value):
         return None
@@ -201,6 +217,11 @@ def validate_spreadsheet_file(storage):
         raise ValueError("A planilha enviada está vazia.")
     if size > MAX_SPREADSHEET_SIZE:
         raise ValueError("A planilha excede o tamanho máximo permitido.")
+    if suffix == ".xlsx":
+        signature = stream.read(4)
+        stream.seek(position)
+        if signature != b"PK\x03\x04":
+            raise ValueError("A planilha enviada não possui assinatura XLSX válida.")
     return suffix
 
 
@@ -250,12 +271,77 @@ def _build_record(row):
     }, errors
 
 
+def _missing_to_default(value, *, max_length=None, preserve_newlines=False):
+    return normalize_text(value, max_length=max_length, preserve_newlines=preserve_newlines) or MISSING_INFORMATION_TEXT
+
+
+def _build_positive_2024_record(row):
+    cpf = normalize_cpf(_row_value(row, "cpf"))
+    email = normalize_email(_row_value(row, "email")) or MISSING_INFORMATION_TEXT
+    nome = _missing_to_default(_row_value(row, "nome"), max_length=255)
+    data_coleta = parse_collection_date(_row_value(row, "data_coleta"))
+    acesso_ad, acesso_ad_error = normalize_bool_strict(_row_value(row, "acesso_ad"))
+    acesso_ms, acesso_ms_error = normalize_bool_strict(_row_value(row, "acesso_ms"))
+    permitiu_acesso_raw, permitiu_acesso_error = normalize_bool_strict(_row_value(row, "permitiu_acesso"))
+    permitiu_acesso = permitiu_acesso_raw or acesso_ad or acesso_ms
+    situacao_legal = _missing_to_default(_row_value(row, "situacao_legal"), max_length=150)
+
+    errors = []
+    if not is_valid_cpf(cpf):
+        errors.append("CPF invalido")
+    if email != MISSING_INFORMATION_TEXT and not is_valid_email(email):
+        errors.append("e-mail invalido")
+    if not data_coleta:
+        errors.append("data de coleta invalida")
+    elif data_coleta.year != 2024:
+        errors.append("data de coleta fora de 2024")
+    elif data_coleta.month == 1:
+        errors.append("janeiro de 2024 nao possui carga cadastrada")
+    if acesso_ad_error:
+        errors.append("ACESSO AD ambiguo")
+    if acesso_ms_error:
+        errors.append("ACESSO MS ambiguo")
+    if permitiu_acesso_error:
+        errors.append("acesso geral ambiguo")
+    if not permitiu_acesso:
+        errors.append("sem acesso positivo confirmado")
+
+    return {
+        "nome": nome,
+        "nome_busca": normalize_key(nome),
+        "cpf": cpf,
+        "email": email,
+        "url_origem": _missing_to_default(_row_value(row, "url"), max_length=2000),
+        "data_coleta": data_coleta,
+        "permitiu_acesso": permitiu_acesso,
+        "acesso_ad": acesso_ad,
+        "acesso_ms": acesso_ms,
+        "situacao_legal": situacao_legal,
+        "situacao_legal_normalizada": normalize_key(situacao_legal),
+        "observacoes": _missing_to_default(_row_value(row, "observacoes"), max_length=4000, preserve_newlines=True),
+        "mensagem_bloqueio": _missing_to_default(
+            _row_value(row, "mensagem_bloqueio"),
+            max_length=1000,
+            preserve_newlines=True,
+        ),
+    }, errors
+
+
 def _find_existing(record):
     return CredencialComprometida.query.filter(
         CredencialComprometida.cpf == record["cpf"],
         CredencialComprometida.email == record["email"],
         CredencialComprometida.url_origem == record["url_origem"],
         CredencialComprometida.data_coleta == record["data_coleta"],
+    ).first()
+
+
+def _find_existing_positive_2024(record):
+    return CredencialComprometida.query.filter(
+        CredencialComprometida.cpf == record["cpf"],
+        CredencialComprometida.email == record["email"],
+        CredencialComprometida.url_origem == record["url_origem"],
+        db.func.date(CredencialComprometida.data_coleta) == record["data_coleta"].date().isoformat(),
     ).first()
 
 
@@ -271,6 +357,111 @@ def _merge_record(existing, record, user_id):
         existing.imported_at = utc_now()
         existing.imported_by_id = user_id
     return changed
+
+
+def _is_more_complete(value, current_value):
+    if value in (None, ""):
+        return False
+    if current_value == value:
+        return False
+    if value == MISSING_INFORMATION_TEXT and current_value not in (None, "", MISSING_INFORMATION_TEXT, EMAIL_NOT_FOUND):
+        return False
+    return current_value in (None, "", MISSING_INFORMATION_TEXT, EMAIL_NOT_FOUND) or current_value != value
+
+
+def _merge_positive_2024_record(existing, record, user_id):
+    changed = False
+    for field, value in record.items():
+        if field in {"cpf", "email", "url_origem", "data_coleta"}:
+            continue
+        if field in {"permitiu_acesso", "acesso_ad", "acesso_ms"}:
+            new_value = bool(getattr(existing, field)) or bool(value)
+            if getattr(existing, field) != new_value:
+                setattr(existing, field, new_value)
+                changed = True
+            continue
+        current_value = getattr(existing, field)
+        if _is_more_complete(value, current_value):
+            setattr(existing, field, value)
+            changed = True
+    if changed:
+        existing.imported_at = utc_now()
+        existing.imported_by_id = user_id
+    return changed
+
+
+def import_positive_2024_credential_spreadsheet(storage, user_id=None):
+    suffix = validate_spreadsheet_file(storage)
+    summary = ImportSummary()
+    temp_path = None
+    temp_dir = Path(current_app.instance_path) / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=temp_dir) as temp_file:
+            temp_path = Path(temp_file.name)
+            storage.stream.seek(0)
+            while True:
+                chunk = storage.stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                temp_file.write(chunk)
+
+        df = _read_spreadsheet(temp_path)
+        df.columns = [normalize_column_name(column) for column in df.columns]
+        if "senha" in df.columns:
+            df = df.drop(columns=["senha"])
+            summary.ignored_password_column = True
+
+        missing = [label for key, label in REQUIRED_COLUMNS.items() if key not in df.columns]
+        if missing:
+            raise ValueError(f"Colunas obrigatórias ausentes: {', '.join(missing)}.")
+
+        for key in OPTIONAL_COLUMNS:
+            if key not in df.columns:
+                df[key] = None
+
+        seen_keys = set()
+        summary.total_rows = int(len(df.index))
+        for index, row in df.iterrows():
+            line_number = int(index) + 2
+            record, errors = _build_positive_2024_record(row)
+            if errors:
+                summary.rejected += 1
+                summary.errors.append({"linha": line_number, "campo": "validacao", "motivo": "; ".join(errors)})
+                continue
+
+            dedup_key = (
+                record["cpf"],
+                record["email"],
+                record["url_origem"],
+                record["data_coleta"].date().isoformat(),
+            )
+            if dedup_key in seen_keys:
+                summary.duplicates_ignored += 1
+                continue
+            seen_keys.add(dedup_key)
+
+            existing = _find_existing_positive_2024(record)
+            if existing:
+                if _merge_positive_2024_record(existing, record, user_id):
+                    summary.updated += 1
+                else:
+                    summary.duplicates_ignored += 1
+            else:
+                db.session.add(CredencialComprometida(**record, imported_at=utc_now(), imported_by_id=user_id))
+                summary.imported += 1
+
+            month = record["data_coleta"].month
+            summary.positive_by_month[month] = summary.positive_by_month.get(month, 0) + 1
+
+        return summary
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                current_app.logger.warning("Não foi possível remover arquivo temporário de credenciais.")
 
 
 def import_credential_spreadsheet(storage, user_id=None):

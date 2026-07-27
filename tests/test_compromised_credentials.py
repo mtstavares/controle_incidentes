@@ -9,7 +9,13 @@ from werkzeug.datastructures import FileStorage
 
 from app import create_app, db, hash
 from app.models import CredencialColetaMensal, CredencialComprometida, User
-from app.services.credential_service import import_credential_spreadsheet, is_valid_cpf, normalize_cpf
+from app.services.credential_service import (
+    MISSING_INFORMATION_TEXT,
+    import_credential_spreadsheet,
+    import_positive_2024_credential_spreadsheet,
+    is_valid_cpf,
+    normalize_cpf,
+)
 from app.services.credential_monthly_totals import (
     HISTORICAL_MONTHLY_TOTALS,
     MonthlyCredentialTotalValidationError,
@@ -63,7 +69,7 @@ class CompromisedCredentialsTest(unittest.TestCase):
         return self.client.post("/login", data={"username": username, "password": password})
 
     def fake_upload(self):
-        return FileStorage(stream=BytesIO(b"fake excel"), filename="credenciais.xlsx")
+        return FileStorage(stream=BytesIO(b"PK\x03\x04fake excel"), filename="credenciais.xlsx")
 
     def add_credential(
         self,
@@ -113,6 +119,37 @@ class CompromisedCredentialsTest(unittest.TestCase):
             "MSG BLOQUEIO.": "=BLOQUEAR",
             "SENHA": "SuperSecreta!123",
         }])
+
+    def valid_2024_dataframe(self):
+        return pd.DataFrame([
+            {
+                "NOME": " Pessoa 2024 ",
+                "CPF": "529.982.247-25",
+                "SENHA": "NuncaPersistir",
+                "EMAIL": "",
+                "URL": "",
+                "DATA COLETA": "15/02/2024",
+                "Permitiu acesso a alguma aplicação?": "Sim",
+                "ACESSO AD": "S",
+                "ACESSO MS": "0",
+                "Situação legal": "",
+                "OBSERVAÇÕES": "",
+                "MSG BLOQUEIO": "",
+            },
+            {
+                "NOME": " Pessoa Marco ",
+                "CPF": "168.995.350-09",
+                "EMAIL": "marco@test.local",
+                "URL": "https://exemplo.invalid/origem",
+                "DATA COLETA": "20/03/2024",
+                "Permitiu acesso a alguma aplicação?": "0",
+                "ACESSO AD": "0",
+                "ACESSO MS": "Positivo",
+                "Situação legal": "Bloqueado",
+                "OBSERVAÇÕES": "ok",
+                "MSG BLOQUEIO": "mensagem",
+            },
+        ])
 
     def test_import_ignores_password_column_and_persists_safe_fields(self):
         with patch("app.services.credential_service._read_spreadsheet", return_value=self.valid_dataframe()):
@@ -214,6 +251,73 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertEqual(summary.rejected, 0)
         self.assertEqual(CredencialComprometida.query.one().email, "e-mail não localizado")
 
+    def test_positive_2024_import_ignores_password_and_defaults_empty_text(self):
+        with patch("app.services.credential_service._read_spreadsheet", return_value=self.valid_2024_dataframe()):
+            summary = import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+
+        self.assertTrue(summary.ignored_password_column)
+        self.assertEqual(summary.imported, 2)
+        self.assertEqual(summary.rejected, 0)
+        february = CredencialComprometida.query.filter_by(cpf="52998224725").one()
+        self.assertEqual(february.email, MISSING_INFORMATION_TEXT)
+        self.assertEqual(february.url_origem, MISSING_INFORMATION_TEXT)
+        self.assertEqual(february.situacao_legal, MISSING_INFORMATION_TEXT)
+        self.assertTrue(february.permitiu_acesso)
+        self.assertTrue(february.acesso_ad)
+        self.assertFalse(february.acesso_ms)
+        self.assertNotIn("NuncaPersistir", str(february.__dict__))
+        self.assertEqual(summary.positive_by_month, {2: 1, 3: 1})
+
+    def test_positive_2024_import_rejects_invalid_dates_january_and_ambiguous_access(self):
+        df = self.valid_2024_dataframe()
+        invalid_date = df.iloc[0].copy()
+        invalid_date["DATA COLETA"] = "31/12/2023"
+        january = df.iloc[0].copy()
+        january["DATA COLETA"] = "15/01/2024"
+        ambiguous = df.iloc[0].copy()
+        ambiguous["DATA COLETA"] = "15/04/2024"
+        ambiguous["ACESSO AD"] = "talvez"
+        df = pd.DataFrame([invalid_date, january, ambiguous])
+
+        with patch("app.services.credential_service._read_spreadsheet", return_value=df):
+            summary = import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+
+        self.assertEqual(summary.imported, 0)
+        self.assertEqual(summary.rejected, 3)
+        self.assertEqual(CredencialComprometida.query.count(), 0)
+
+    def test_positive_2024_import_is_idempotent_and_deduplicates_sheet_rows(self):
+        df = self.valid_2024_dataframe()
+        df = pd.concat([df, df.iloc[[0]]], ignore_index=True)
+        with patch("app.services.credential_service._read_spreadsheet", return_value=df):
+            summary = import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+        self.assertEqual(summary.imported, 2)
+        self.assertEqual(summary.duplicates_ignored, 1)
+
+        with patch("app.services.credential_service._read_spreadsheet", return_value=df):
+            summary = import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+        self.assertEqual(summary.imported, 0)
+        self.assertEqual(summary.duplicates_ignored, 3)
+        self.assertEqual(CredencialComprometida.query.count(), 2)
+
+    def test_dashboard_2024_uses_consolidated_total_without_adding_positives(self):
+        self.login()
+        self.add_monthly_total(2024, 2, 508)
+        with patch("app.services.credential_service._read_spreadsheet", return_value=self.valid_2024_dataframe().iloc[[0]]):
+            import_positive_2024_credential_spreadsheet(self.fake_upload(), user_id=1)
+            db.session.commit()
+
+        payload = self.client.get("/api/dashboard/credenciais?year=2024&month=2").get_json()
+        item = payload["data"][0]
+        self.assertEqual(item["credenciais_localizadas"], 508)
+        self.assertEqual(item["credenciais_com_acesso"], 1)
+        self.assertEqual(item["credenciais_sem_acesso"], 507)
+        self.assertNotEqual(item["credenciais_localizadas"], 509)
+
     def test_cpf_normalization_and_validation(self):
         self.assertEqual(normalize_cpf("052.998.224-725"), "052998224725")
         self.assertTrue(is_valid_cpf("52998224725"))
@@ -234,8 +338,10 @@ class CompromisedCredentialsTest(unittest.TestCase):
         seed_historical_monthly_totals()
         second_count = CredencialColetaMensal.query.count()
 
-        self.assertEqual(first_count, 18)
-        self.assertEqual(second_count, 18)
+        self.assertEqual(first_count, 29)
+        self.assertEqual(second_count, 29)
+        self.assertIsNone(CredencialColetaMensal.query.filter_by(ano_referencia=2024, mes_referencia=1).one_or_none())
+        self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2024, mes_referencia=2).one().quantidade_localizada, 508)
         self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2025, mes_referencia=1).one().quantidade_localizada, 2307)
         self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2026, mes_referencia=6).one().quantidade_localizada, 1580)
 
