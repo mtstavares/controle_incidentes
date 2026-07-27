@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-section" aria-labelledby="buscar-ip-title">
+    <div class="page-section__header">
+        <div>
+            <p class="eyebrow">Utilitários</p>
+            <h1 id="buscar-ip-title">Buscar IP</h1>
+        </div>
+    </div>
+
+    <form class="filter-panel netbox-search-form" method="POST" action="{{ url_for('utilitarios.buscar_ip') }}" data-netbox-ip-search-form novalidate>
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="form-field">
+            <label for="ip_query">Endereço IP</label>
+            <input
+                class="form-control"
+                id="ip_query"
+                name="query"
+                inputmode="text"
+                autocomplete="off"
+                maxlength="45"
+                value="{{ query or '' }}"
+                placeholder="Digite o IP para consultar no NetBox"
+                {% if current_user.profile == 'Viewer' %}aria-describedby="ip-viewer-help"{% endif %}
+                required
+            >
+            {% if current_user.profile == 'Viewer' %}
+                <p id="ip-viewer-help" class="form-text text-muted">
+                    Seu perfil possui apenas permissão de visualização. A consulta de IPs no NetBox é permitida apenas para usuários Admin e User.
+                </p>
+            {% endif %}
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit" {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar</button>
+        </div>
+    </form>
+
+    {% if result %}
+        <div class="netbox-result-summary">
+            <strong>IP consultado:</strong> {{ result.query_ip }}
+            <span>{{ result.total_results }} resultado(s)</span>
+        </div>
+
+        {% if not result.ip_addresses and not result.prefixes %}
+            <div class="empty-state">
+                <div class="empty-state__mark">IP</div>
+                <h2>Nenhum registro encontrado</h2>
+                <p>Não há endereço IP ou prefixo correspondente aos parâmetros informados.</p>
+            </div>
+        {% else %}
+            <div class="netbox-result-grid">
+                <article class="netbox-card">
+                    <h2>Endereços IP</h2>
+                    {% if result.ip_addresses %}
+                        <div class="netbox-list">
+                            {% for item in result.ip_addresses %}
+                                <div class="netbox-list__item">
+                                    <h3>{{ item.address }}</h3>
+                                    <dl class="pm-detail-list">
+                                        <div><dt>Status</dt><dd>{{ item.status }}</dd></div>
+                                        <div><dt>DNS</dt><dd>{{ item.dns_name }}</dd></div>
+                                        <div><dt>Descrição</dt><dd>{{ item.description }}</dd></div>
+                                        <div><dt>Função</dt><dd>{{ item.role }}</dd></div>
+                                        <div><dt>Tenant</dt><dd>{{ item.tenant }}</dd></div>
+                                        <div><dt>VRF</dt><dd>{{ item.vrf }}</dd></div>
+                                        <div><dt>Vínculo</dt><dd>{{ item.assigned_object }}</dd></div>
+                                    </dl>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">Nenhum endereço IP específico encontrado.</p>
+                    {% endif %}
+                </article>
+
+                <article class="netbox-card">
+                    <h2>Prefixos</h2>
+                    {% if result.prefixes %}
+                        <div class="netbox-list">
+                            {% for item in result.prefixes %}
+                                <div class="netbox-list__item">
+                                    <h3>{{ item.prefix }}</h3>
+                                    <dl class="pm-detail-list">
+                                        <div><dt>Status</dt><dd>{{ item.status }}</dd></div>
+                                        <div><dt>Site</dt><dd>{{ item.site }}</dd></div>
+                                        <div><dt>VLAN</dt><dd>{{ item.vlan }}</dd></div>
+                                        <div><dt>Descrição</dt><dd>{{ item.description }}</dd></div>
+                                        <div><dt>Tenant</dt><dd>{{ item.tenant }}</dd></div>
+                                        <div><dt>VRF</dt><dd>{{ item.vrf }}</dd></div>
+                                    </dl>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">Nenhum prefixo contendo o IP foi encontrado.</p>
+                    {% endif %}
+                </article>
+            </div>
+        {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

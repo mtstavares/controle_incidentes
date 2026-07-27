@@ -53,8 +53,8 @@ class FakeSession:
     def close(self):
         pass
 
-    def get(self, url, timeout=None, verify=None):
-        self.calls.append({"url": url, "timeout": timeout, "verify": verify})
+    def get(self, url, params=None, headers=None, timeout=None, verify=None):
+        self.calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout, "verify": verify})
         for key, response in self.responses.items():
             if key in url:
                 if isinstance(response, Exception):

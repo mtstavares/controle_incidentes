@@ -51,6 +51,10 @@
                 <span class="sidebar-link__icon" aria-hidden="true">P</span>
                 <span>Buscar PM</span>
             </a>
+            <a class="sidebar-link" href="{{ url_for('utilitarios.buscar_ip') }}" {% if endpoint == 'utilitarios.buscar_ip' %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">IP</span>
+                <span>Buscar IP</span>
+            </a>
         </nav>
     </div>
 

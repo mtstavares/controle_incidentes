@@ -215,6 +215,24 @@ class CredencialComprometida(TimestampMixin, db.Model):
         return f"<CredencialComprometida {self.id} - {self.cpf}>"
 
 
+class CredencialColetaMensal(TimestampMixin, db.Model):
+    __tablename__ = "credenciais_coletas_mensais"
+    __table_args__ = (
+        db.UniqueConstraint("ano_referencia", "mes_referencia", name="uq_credenciais_coletas_mensais_competencia"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    ano_referencia = db.Column(db.Integer, nullable=False, index=True)
+    mes_referencia = db.Column(db.Integer, nullable=False, index=True)
+    quantidade_localizada = db.Column(db.Integer, nullable=False, default=0)
+
+    def __repr__(self):
+        return (
+            f"<CredencialColetaMensal {self.ano_referencia:04d}-"
+            f"{self.mes_referencia:02d}: {self.quantidade_localizada}>"
+        )
+
+
 class ConscientizacaoCampanha(TimestampMixin, db.Model):
     __tablename__ = "conscientizacao_campanhas"
 

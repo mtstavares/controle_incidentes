@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from app import create_app
 from app.seeds.organizational_units import seed_development_organizational_units
+from app.services.credential_monthly_totals import seed_historical_monthly_totals
 from config import DevelopmentConfig
 
 
@@ -20,9 +21,17 @@ def main():
     app = create_app(DevelopmentConfig)
     with app.app_context():
         result = seed_development_organizational_units()
+        credential_totals_result = seed_historical_monthly_totals()
         print(
             "Seed de unidades organizacionais concluída: "
             f"{result['created']} criadas, {result['existing']} já existentes."
+        )
+
+        print(
+            "Seed de totais mensais de credenciais concluido: "
+            f"{credential_totals_result['created']} criados, "
+            f"{credential_totals_result['updated']} atualizados, "
+            f"{credential_totals_result['unchanged']} sem alteracao."
         )
 
 
