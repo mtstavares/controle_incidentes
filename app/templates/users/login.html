@@ -12,17 +12,17 @@
         </div>
         <div>
             <p class="eyebrow text-white">Controle de Incidentes</p>
-            <h1>Gestão institucional de incidentes cibernéticos.</h1>
-            <p class="mt-3">Acesse o ambiente interno para registrar, acompanhar e analisar ocorrências com rastreabilidade e segurança.</p>
+            <h1>Gestão de incidentes divisão de Cibersegurança.</h1>
+            
         </div>
-        <p class="mb-0">Acesso restrito a usuários autorizados.</p>
+        
     </section>
 
     <section class="login-panel" aria-labelledby="login-title">
         <div class="login-card">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <section class="app-notification-stack" aria-label="Mensagens do sistema" data-notification-container>
+                    <section class="app-notification-stack mb-4" aria-label="Mensagens do sistema" data-notification-container>
                     {% for category, message in messages %}
                         <div
                             class="app-notification app-notification--{{ category }}"
@@ -42,7 +42,7 @@
 
             <p class="eyebrow">Autenticação</p>
             <h2 id="login-title" class="h3 fw-bold">Entrar no sistema</h2>
-            <p class="text-muted">Use seu usuário e senha cadastrados.</p>
+            
 
             <form method="POST" action="#" data-prevent-duplicate novalidate>
                 <div class="mb-3">
