@@ -74,6 +74,7 @@ class ImportSummary:
     ignored_password_column: bool = False
     errors: list[dict] = field(default_factory=list)
     positive_by_month: dict[int, int] = field(default_factory=dict)
+    positive_by_competence: dict[str, int] = field(default_factory=dict)
 
 
 MISSING_INFORMATION_TEXT = "Não foi possível encontrar informações"
@@ -275,7 +276,7 @@ def _missing_to_default(value, *, max_length=None, preserve_newlines=False):
     return normalize_text(value, max_length=max_length, preserve_newlines=preserve_newlines) or MISSING_INFORMATION_TEXT
 
 
-def _build_positive_2024_record(row):
+def _build_positive_year_record(row, allowed_years):
     cpf = normalize_cpf(_row_value(row, "cpf"))
     email = normalize_email(_row_value(row, "email")) or MISSING_INFORMATION_TEXT
     nome = _missing_to_default(_row_value(row, "nome"), max_length=255)
@@ -293,9 +294,9 @@ def _build_positive_2024_record(row):
         errors.append("e-mail invalido")
     if not data_coleta:
         errors.append("data de coleta invalida")
-    elif data_coleta.year != 2024:
-        errors.append("data de coleta fora de 2024")
-    elif data_coleta.month == 1:
+    elif data_coleta.year not in allowed_years:
+        errors.append("data de coleta fora do periodo permitido")
+    elif data_coleta.year == 2024 and data_coleta.month == 1:
         errors.append("janeiro de 2024 nao possui carga cadastrada")
     if acesso_ad_error:
         errors.append("ACESSO AD ambiguo")
@@ -336,7 +337,7 @@ def _find_existing(record):
     ).first()
 
 
-def _find_existing_positive_2024(record):
+def _find_existing_positive(record):
     return CredencialComprometida.query.filter(
         CredencialComprometida.cpf == record["cpf"],
         CredencialComprometida.email == record["email"],
@@ -369,7 +370,7 @@ def _is_more_complete(value, current_value):
     return current_value in (None, "", MISSING_INFORMATION_TEXT, EMAIL_NOT_FOUND) or current_value != value
 
 
-def _merge_positive_2024_record(existing, record, user_id):
+def _merge_positive_record(existing, record, user_id):
     changed = False
     for field, value in record.items():
         if field in {"cpf", "email", "url_origem", "data_coleta"}:
@@ -390,7 +391,8 @@ def _merge_positive_2024_record(existing, record, user_id):
     return changed
 
 
-def import_positive_2024_credential_spreadsheet(storage, user_id=None):
+def import_positive_credential_spreadsheet(storage, *, user_id=None, allowed_years=None):
+    allowed_years = set(allowed_years or {2024})
     suffix = validate_spreadsheet_file(storage)
     summary = ImportSummary()
     temp_path = None
@@ -425,7 +427,7 @@ def import_positive_2024_credential_spreadsheet(storage, user_id=None):
         summary.total_rows = int(len(df.index))
         for index, row in df.iterrows():
             line_number = int(index) + 2
-            record, errors = _build_positive_2024_record(row)
+            record, errors = _build_positive_year_record(row, allowed_years)
             if errors:
                 summary.rejected += 1
                 summary.errors.append({"linha": line_number, "campo": "validacao", "motivo": "; ".join(errors)})
@@ -442,9 +444,9 @@ def import_positive_2024_credential_spreadsheet(storage, user_id=None):
                 continue
             seen_keys.add(dedup_key)
 
-            existing = _find_existing_positive_2024(record)
+            existing = _find_existing_positive(record)
             if existing:
-                if _merge_positive_2024_record(existing, record, user_id):
+                if _merge_positive_record(existing, record, user_id):
                     summary.updated += 1
                 else:
                     summary.duplicates_ignored += 1
@@ -453,7 +455,9 @@ def import_positive_2024_credential_spreadsheet(storage, user_id=None):
                 summary.imported += 1
 
             month = record["data_coleta"].month
+            competence = f"{record['data_coleta'].year:04d}-{month:02d}"
             summary.positive_by_month[month] = summary.positive_by_month.get(month, 0) + 1
+            summary.positive_by_competence[competence] = summary.positive_by_competence.get(competence, 0) + 1
 
         return summary
     finally:
@@ -462,6 +466,10 @@ def import_positive_2024_credential_spreadsheet(storage, user_id=None):
                 temp_path.unlink()
             except OSError:
                 current_app.logger.warning("Não foi possível remover arquivo temporário de credenciais.")
+
+
+def import_positive_2024_credential_spreadsheet(storage, user_id=None):
+    return import_positive_credential_spreadsheet(storage, user_id=user_id, allowed_years={2024})
 
 
 def import_credential_spreadsheet(storage, user_id=None):
