@@ -311,8 +311,15 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!input) return;
             const visible = input.type === 'text';
             input.type = visible ? 'password' : 'text';
-            button.textContent = visible ? 'Mostrar' : 'Ocultar';
             button.setAttribute('aria-pressed', String(!visible));
+            if (button.hasAttribute('data-toggle-password-icon')) {
+                const label = visible ? 'Mostrar senha' : 'Ocultar senha';
+                button.setAttribute('aria-label', label);
+                button.setAttribute('title', label);
+                button.classList.toggle('is-visible', !visible);
+            } else {
+                button.textContent = visible ? 'Mostrar' : 'Ocultar';
+            }
         });
     });
 
