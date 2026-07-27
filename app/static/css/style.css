@@ -767,42 +767,6 @@ h1 {
   background: var(--color-surface-elevated);
 }
 
-.audit-table-wrap {
-  overflow-x: visible;
-}
-
-.audit-table {
-  width: 100%;
-  min-width: 0;
-  table-layout: fixed;
-}
-
-.audit-table th,
-.audit-table td {
-  padding-inline: var(--space-2);
-  overflow-wrap: anywhere;
-  word-break: normal;
-}
-
-.audit-table th {
-  white-space: normal;
-}
-
-.audit-table .app-badge {
-  max-width: 100%;
-  white-space: normal;
-}
-
-.audit-table__date { width: 15%; }
-.audit-table__user { width: 13%; }
-.audit-table__action { width: 17%; }
-.audit-table__module { width: 12%; }
-.audit-table__entity { width: 12%; }
-.audit-table__record { width: 9%; }
-.audit-table__result { width: 9%; }
-.audit-table__ip { width: 8%; }
-.audit-table__detail { width: 5%; }
-
 .mobile-card-list {
   display: none;
 }
