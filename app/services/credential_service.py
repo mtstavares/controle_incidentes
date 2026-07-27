@@ -113,7 +113,10 @@ def normalize_column_name(value):
 
 
 def normalize_cpf(value):
-    return re.sub(r"\D", "", str(value or ""))
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) == 10:
+        return "0" + digits
+    return digits
 
 
 def is_valid_cpf(cpf):
@@ -181,6 +184,28 @@ def parse_collection_date(value):
     if value is None or pd.isna(value):
         return None
     raw_value = str(value).strip()
+    pt_months = {
+        "JAN": "01",
+        "FEV": "02",
+        "MAR": "03",
+        "ABR": "04",
+        "MAI": "05",
+        "JUN": "06",
+        "JUL": "07",
+        "AGO": "08",
+        "SET": "09",
+        "OUT": "10",
+        "NOV": "11",
+        "DEZ": "12",
+    }
+    compact_match = re.fullmatch(r"(\d{1,2})([A-Za-zÇÃÕÁÉÍÓÚÂÊÔ]{3})(\d{2,4})", raw_value.upper())
+    if compact_match and compact_match.group(2) in pt_months:
+        day, month_text, year = compact_match.groups()
+        normalized_year = int(year)
+        if normalized_year < 100:
+            normalized_year += 2000
+        raw_value = f"{int(day):02d}/{pt_months[month_text]}/{normalized_year:04d}"
+
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_value):
         parsed = pd.to_datetime(raw_value, errors="coerce", format="%Y-%m-%d")
     elif re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", raw_value):
