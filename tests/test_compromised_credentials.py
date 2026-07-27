@@ -4,16 +4,21 @@ from io import BytesIO
 from unittest.mock import patch
 
 import pandas as pd
+from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
 from app import create_app, db, hash
-from app.models import CredencialColetaMensal, CredencialComprometida, User
+from app.models import CredencialColetaMensal, CredencialComprometida, CredencialImportLote, User
 from app.services.credential_service import (
     MISSING_INFORMATION_TEXT,
+    build_monthly_import_preview,
+    confirm_monthly_import,
+    credential_to_table_dict,
     import_credential_spreadsheet,
     import_positive_2024_credential_spreadsheet,
     is_valid_cpf,
+    load_monthly_import_preview,
     normalize_cpf,
 )
 from app.services.credential_monthly_totals import (
@@ -57,6 +62,15 @@ class CompromisedCredentialsTest(unittest.TestCase):
             must_change_password=False,
             password=hash("user123"),
         ))
+        db.session.add(User(
+            username="viewer",
+            name="Viewer",
+            email="viewer@test.com",
+            profile="Viewer",
+            is_temp_password=False,
+            must_change_password=False,
+            password=hash("viewer123"),
+        ))
         db.session.commit()
         self.client = self.app.test_client()
 
@@ -70,6 +84,85 @@ class CompromisedCredentialsTest(unittest.TestCase):
 
     def fake_upload(self):
         return FileStorage(stream=BytesIO(b"PK\x03\x04fake excel"), filename="credenciais.xlsx")
+
+    def monthly_workbook_upload(self):
+        headers_positive = [
+            "NOME",
+            "CPF",
+            "SENHA",
+            "EMAIL",
+            "URL",
+            "DATA COLETA",
+            "QUANTIDADE DE IDENTIFICAÇÕES",
+            "DATA DAS IDENTIFICAÇÕES",
+            "FONTE",
+            "ACESSO AD",
+            "ACESSO MS",
+            "SITUAÇÃO LEGAL",
+            "OBSERVAÇÕES",
+            "MENSAGEM DE BLOQUEIO - RDS",
+        ]
+        headers_total = headers_positive[:-2]
+        wb = Workbook()
+        ws_ad = wb.active
+        ws_ad.title = "Credenciais AD"
+        ws_ms = wb.create_sheet("Credenciais MS")
+        ws_total = wb.create_sheet("Total")
+        ws_ad.append(headers_positive)
+        ws_ms.append(headers_positive)
+        ws_total.append(headers_total)
+        base_1 = [
+            "Pessoa Teste",
+            "529.982.247-25",
+            "SenhaA",
+            "pessoa@test.local",
+            "https://origem.invalid/a",
+            "27JUL",
+            1,
+            "27JUL",
+            "BTT-APURA",
+            "SIM",
+            "SIM",
+            "Bloqueado",
+        ]
+        base_2 = [
+            "Pessoa Teste",
+            "529.982.247-25",
+            "SenhaB",
+            "pessoa@test.local",
+            "https://origem.invalid/a",
+            "27JUL",
+            1,
+            "27JUL",
+            "BTT-APURA",
+            "NAO",
+            "SIM",
+            "Bloqueado",
+        ]
+        base_3 = [
+            "Outra Pessoa",
+            "168.995.350-09",
+            "SenhaC",
+            "outra@test.local",
+            "https://origem.invalid/b",
+            "27JUL",
+            1,
+            "27JUL",
+            "BTT-APURA",
+            "NAO",
+            "NAO",
+            "Bloqueado",
+        ]
+        ws_total.append(base_1)
+        ws_total.append(base_2)
+        ws_total.append(base_3)
+        ws_ad.append(base_1 + ["Observação AD", "Mensagem AD - RDS-1"])
+        ws_ms.append(base_1 + ["Observação MS", "Mensagem MS - RDS-1"])
+        ws_ms.append(base_2 + ["Observação MS", "Mensagem MS 2 - RDS-2"])
+        stream = BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+        return FileStorage(stream=stream, filename="Credenciais_JUL26.xlsx")
 
     def add_credential(
         self,
@@ -339,6 +432,70 @@ class CompromisedCredentialsTest(unittest.TestCase):
         self.assertEqual(record.data_coleta.year, 2024)
         self.assertEqual(record.data_coleta.month, 4)
         self.assertEqual(record.data_coleta.day, 10)
+
+    def test_monthly_preview_consolidates_ad_ms_and_keeps_same_cpf_different_passwords(self):
+        preview = build_monthly_import_preview(self.monthly_workbook_upload())
+
+        self.assertEqual(preview.year, 2026)
+        self.assertTrue(preview.ignored_password_column)
+        self.assertEqual(preview.total_tested, 3)
+        self.assertEqual(preview.total_validated, 2)
+        self.assertEqual(preview.only_ad, 0)
+        self.assertEqual(preview.only_ms, 1)
+        self.assertEqual(preview.ad_and_ms, 1)
+        self.assertEqual(preview.not_validated, 1)
+        self.assertEqual(len({item["fingerprint"] for item in preview.positive_records}), 2)
+        self.assertNotIn("SenhaA", str(preview.to_dict()))
+        self.assertNotIn("SenhaB", str(preview.to_dict()))
+
+    def test_monthly_confirm_imports_only_positive_records_and_monthly_total(self):
+        preview = build_monthly_import_preview(self.monthly_workbook_upload())
+        batch = confirm_monthly_import(preview.token, user_id=1)
+
+        self.assertEqual(batch.total_testado, 3)
+        self.assertEqual(batch.total_validado, 2)
+        self.assertEqual(CredencialImportLote.query.count(), 1)
+        self.assertEqual(CredencialComprometida.query.count(), 2)
+        self.assertEqual(CredencialColetaMensal.query.filter_by(ano_referencia=2026, mes_referencia=7).one().quantidade_localizada, 3)
+        records = CredencialComprometida.query.order_by(CredencialComprometida.id.asc()).all()
+        self.assertEqual(records[0].cpf, records[1].cpf)
+        self.assertNotEqual(records[0].credencial_fingerprint, records[1].credencial_fingerprint)
+        self.assertEqual({records[0].mensagem_bloqueio, records[1].mensagem_bloqueio}, {"Mensagem MS - RDS-1", "Mensagem MS 2 - RDS-2"})
+        self.assertIsNone(records[0].rds)
+        self.assertNotIn("SenhaA", str(records[0].__dict__))
+        self.assertNotIn("SenhaB", str(records[1].__dict__))
+
+        table_rows = [credential_to_table_dict(record) for record in records]
+        self.assertEqual({row["sistema"] for row in table_rows}, {"AD/MS", "MS"})
+
+    def test_viewer_cannot_preview_monthly_import(self):
+        self.login("viewer", "viewer123")
+        response = self.client.post(
+            "/credenciais-comprometidas/importar/previsualizar",
+            data={
+                "arquivo": (BytesIO(b"PK\x03\x04fake"), "credenciais.xlsx"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("não possui permissão", response.get_data(as_text=True))
+
+    def test_admin_can_cancel_monthly_import_preview(self):
+        preview = build_monthly_import_preview(self.monthly_workbook_upload())
+        self.login()
+
+        response = self.client.post(
+            "/credenciais-comprometidas/importar/cancelar",
+            data={"preview_token": preview.token},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Importação mensal cancelada.", response.get_data(as_text=True))
+        with self.assertRaises(ValueError):
+            load_monthly_import_preview(preview.token)
 
     def test_monthly_total_upsert_creates_and_updates_competence(self):
         created = self.add_monthly_total(2026, 7, 10)

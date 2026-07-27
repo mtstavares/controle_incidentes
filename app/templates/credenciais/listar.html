@@ -4,6 +4,83 @@
 {% block content %}
 {{ page_header('Credenciais comprometidas', 'Consulta segura de credenciais expostas consolidadas pela DivCiber.') }}
 
+{% if can_import %}
+<section class="app-card credential-import-card mb-4" aria-labelledby="credential-import-title">
+    <div class="app-card__header">
+        <div>
+            <h2 id="credential-import-title" class="h5 mb-1">Importar planilha mensal</h2>
+        </div>
+    </div>
+    <div class="app-card__body">
+        <form method="POST" action="{{ url_for('credenciais.previsualizar_importacao_mensal') }}" enctype="multipart/form-data" class="credential-import-form">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <div class="credential-import-form__field">
+                <label " for="arquivo_credenciais"><b>Planilha .xlsx</b></label>
+                <input class="form-control" id="arquivo_credenciais" name="arquivo" type="file" accept=".xlsx" required>
+            </div>
+            <div class="credential-import-form__actions">
+                <button class="btn btn-primary w-100" type="submit">Pré-visualizar</button>
+            </div>
+        </form>
+
+        {% if import_preview %}
+            <hr>
+            <div class="metric-grid credential-dashboard-cards mb-3">
+                <article class="metric-card"><span class="metric-card__label">Total testado<br></span><strong class="metric-card__value">{{ import_preview.total_tested }}</strong></article>
+                <article class="metric-card"><span class="metric-card__label">Total validado<br></span><strong class="metric-card__value">{{ import_preview.total_validated }}</strong></article>
+                <article class="metric-card"><span class="metric-card__label">Somente AD<br></span><strong class="metric-card__value">{{ import_preview.only_ad }}</strong></article>
+                <article class="metric-card"><span class="metric-card__label">Somente MS<br></span><strong class="metric-card__value">{{ import_preview.only_ms }}</strong></article>
+                <article class="metric-card"><span class="metric-card__label">AD e MS<br></span><strong class="metric-card__value">{{ import_preview.ad_and_ms }}</strong></article>
+                <article class="metric-card"><span class="metric-card__label">Não validadas<br></span><strong class="metric-card__value">{{ import_preview.not_validated }}</strong></article>
+            </div>
+            <p class="text-muted">
+                Arquivo: {{ import_preview.original_filename }} |
+                Mês/Ano: {{ "%02d/%04d"|format(import_preview.month, import_preview.year) }} |
+
+            </p>
+            {% if import_preview.errors %}
+                <div class="app-notification app-notification--danger mb-3" role="alert">
+                    <div class="app-notification__content">
+                        A planilha possui erros e não pode ser importada.
+                    </div>
+                </div>
+                <ul class="mb-3">
+                    {% for item in import_preview.errors[:20] %}
+                        <li>{{ item.aba }} linha {{ item.linha }}: {{ item.motivo }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            {% if import_preview.warnings %}
+                <div class="app-notification app-notification--warning mb-3" role="status">
+                    <div class="app-notification__content">
+                        Foram encontrados alertas. Revise antes de confirmar.
+                    </div>
+                </div>
+                <ul class="mb-3">
+                    {% for item in import_preview.warnings[:20] %}
+                        <li>{{ item.aba }} linha {{ item.linha }}: {{ item.motivo }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            {% if import_preview.can_confirm %}
+                <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+                    <form method="POST" action="{{ url_for('credenciais.cancelar_importacao_mensal') }}">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="preview_token" value="{{ import_preview.token }}">
+                        <button class="btn btn-outline-secondary w-100" type="submit">Cancelar</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('credenciais.confirmar_importacao_mensal') }}">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="preview_token" value="{{ import_preview.token }}">
+                        <button class="btn btn-success w-100" type="submit">Confirmar importação</button>
+                    </form>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
 <section class="app-card mb-4" aria-labelledby="credential-filter-title">
     <div class="app-card__header">
         <div>
@@ -34,8 +111,6 @@
                     <option value="somente_ad" {% if filtros.get('access') == 'somente_ad' %}selected{% endif %}>Somente AD</option>
                     <option value="somente_ms" {% if filtros.get('access') == 'somente_ms' %}selected{% endif %}>Somente MS</option>
                     <option value="ad_ms" {% if filtros.get('access') == 'ad_ms' %}selected{% endif %}>AD e MS</option>
-                    <option value="nenhum" {% if filtros.get('access') == 'nenhum' %}selected{% endif %}>Sem acesso confirmado</option>
-                    <option value="alguma_aplicacao" {% if filtros.get('access') == 'alguma_aplicacao' %}selected{% endif %}>Alguma aplicação</option>
                 </select>
             </div>
             <div class="span-2">
@@ -75,7 +150,8 @@
                         <th>Nome</th>
                         <th>E-mail</th>
                         <th>Data da coleta</th>
-                        <th>Mensagem de bloqueio</th>
+                        <th>Sistema</th>
+                        <th>Mensagem de bloqueio-RDS</th>
                         <th>Situação legal</th>
                     </tr>
                 </thead>
@@ -86,6 +162,7 @@
                         <td>{{ credencial.nome }}</td>
                         <td>{{ credencial.email }}</td>
                         <td>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</td>
+                        <td>{% if credencial.acesso_ad and credencial.acesso_ms %}AD/MS{% elif credencial.acesso_ad %}AD{% elif credencial.acesso_ms %}MS{% endif %}</td>
                         <td>{{ credencial.mensagem_bloqueio or '' }}</td>
                         <td>{{ credencial.situacao_legal or '' }}</td>
                     </tr>
@@ -101,7 +178,8 @@
                     <div><dt>CPF</dt><dd class="credential-cpf-cell">{{ "%s.%s.%s-%s"|format(credencial.cpf[:3], credencial.cpf[3:6], credencial.cpf[6:9], credencial.cpf[9:]) }}</dd></div>
                     <div><dt>Data da coleta</dt><dd>{{ credencial.data_coleta.strftime('%d/%m/%Y') if credencial.data_coleta else '' }}</dd></div>
                     <div><dt>E-mail</dt><dd class="user-email">{{ credencial.email }}</dd></div>
-                    <div><dt>Mensagem de bloqueio</dt><dd>{{ credencial.mensagem_bloqueio or '' }}</dd></div>
+                    <div><dt>Sistema</dt><dd>{% if credencial.acesso_ad and credencial.acesso_ms %}AD/MS{% elif credencial.acesso_ad %}AD{% elif credencial.acesso_ms %}MS{% endif %}</dd></div>
+                    <div><dt>Mensagem de bloqueio-RDS</dt><dd>{{ credencial.mensagem_bloqueio or '' }}</dd></div>
                     <div><dt>Situação legal</dt><dd>{{ credencial.situacao_legal or '' }}</dd></div>
                 </dl>
             </article>
@@ -164,6 +242,7 @@
                 '<td>' + escapeText(row.nome) + '</td>' +
                 '<td>' + escapeText(row.email) + '</td>' +
                 '<td>' + escapeText(row.data_coleta) + '</td>' +
+                '<td>' + escapeText(row.sistema) + '</td>' +
                 '<td>' + escapeText(row.mensagem_bloqueio) + '</td>' +
                 '<td>' + escapeText(row.situacao_legal) + '</td>' +
             '</tr>';
@@ -176,7 +255,8 @@
                     '<div><dt>CPF</dt><dd class="credential-cpf-cell">' + escapeText(row.cpf) + '</dd></div>' +
                     '<div><dt>Data da coleta</dt><dd>' + escapeText(row.data_coleta) + '</dd></div>' +
                     '<div><dt>E-mail</dt><dd class="user-email">' + escapeText(row.email) + '</dd></div>' +
-                    '<div><dt>Mensagem de bloqueio</dt><dd>' + escapeText(row.mensagem_bloqueio) + '</dd></div>' +
+                    '<div><dt>Sistema</dt><dd>' + escapeText(row.sistema) + '</dd></div>' +
+                    '<div><dt>Mensagem de bloqueio-RDS</dt><dd>' + escapeText(row.mensagem_bloqueio) + '</dd></div>' +
                     '<div><dt>Situação legal</dt><dd>' + escapeText(row.situacao_legal) + '</dd></div>' +
                 '</dl>' +
             '</article>';

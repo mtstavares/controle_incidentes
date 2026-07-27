@@ -186,9 +186,9 @@ class CredencialComprometida(TimestampMixin, db.Model):
     __table_args__ = (
         db.UniqueConstraint(
             "cpf",
-            "email",
-            "url_origem",
+            "credencial_fingerprint",
             "data_coleta",
+            "lote_id",
             name="uq_credenciais_comprometidas_dedup",
         ),
     )
@@ -207,12 +207,57 @@ class CredencialComprometida(TimestampMixin, db.Model):
     situacao_legal_normalizada = db.Column(db.String(150), nullable=True, index=True)
     observacoes = db.Column(db.Text, nullable=True)
     mensagem_bloqueio = db.Column(db.Text, nullable=True)
+    rds = db.Column(db.String(255), nullable=True)
+    credencial_fingerprint = db.Column(db.String(64), nullable=True, index=True)
+    lote_id = db.Column(db.Integer, db.ForeignKey("credenciais_import_lotes.id"), nullable=True, index=True)
     imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
     imported_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     imported_by = db.relationship("User", backref="credenciais_importadas")
+    lote = db.relationship("CredencialImportLote", back_populates="credenciais")
 
     def __repr__(self):
         return f"<CredencialComprometida {self.id} - {self.cpf}>"
+
+
+class CredencialImportLote(TimestampMixin, db.Model):
+    __tablename__ = "credenciais_import_lotes"
+    __table_args__ = (
+        db.UniqueConstraint("arquivo_sha256", name="uq_credenciais_import_lotes_arquivo_sha256"),
+        db.UniqueConstraint(
+            "ano_referencia",
+            "mes_referencia",
+            "versao",
+            name="uq_credenciais_import_lotes_competencia_versao",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    arquivo_nome_original = db.Column(db.String(255), nullable=False)
+    arquivo_sha256 = db.Column(db.String(64), nullable=False, index=True)
+    ano_referencia = db.Column(db.Integer, nullable=False, index=True)
+    mes_referencia = db.Column(db.Integer, nullable=False, index=True)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    imported_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    total_testado = db.Column(db.Integer, nullable=False, default=0)
+    total_validado = db.Column(db.Integer, nullable=False, default=0)
+    total_somente_ad = db.Column(db.Integer, nullable=False, default=0)
+    total_somente_ms = db.Column(db.Integer, nullable=False, default=0)
+    total_ad_ms = db.Column(db.Integer, nullable=False, default=0)
+    total_nao_validado = db.Column(db.Integer, nullable=False, default=0)
+    rejeitados = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(30), nullable=False, default="ativo", index=True)
+    versao = db.Column(db.Integer, nullable=False, default=1)
+    lote_substituido_id = db.Column(db.Integer, db.ForeignKey("credenciais_import_lotes.id"), nullable=True)
+
+    imported_by = db.relationship("User", foreign_keys=[imported_by_id], backref="credenciais_lotes_importados")
+    lote_substituido = db.relationship("CredencialImportLote", remote_side=[id])
+    credenciais = db.relationship("CredencialComprometida", back_populates="lote", lazy=True)
+
+    def __repr__(self):
+        return (
+            f"<CredencialImportLote {self.ano_referencia:04d}-"
+            f"{self.mes_referencia:02d} v{self.versao} {self.status}>"
+        )
 
 
 class CredencialColetaMensal(TimestampMixin, db.Model):
