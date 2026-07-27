@@ -1526,7 +1526,7 @@ h1 {
 .login-hero {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   min-height: 100vh;
   padding: clamp(2rem, 5vw, 4rem);
   color: #fff;
@@ -1539,12 +1539,19 @@ h1 {
 }
 
 .login-hero__logo {
-  width: 84px;
-  height: 84px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   object-fit: cover;
   background: #fff;
-  border: 3px solid rgb(255 255 255 / 70%);
+}
+
+.login-hero__content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: var(--space-8);
 }
 
 .login-hero h1 {
@@ -1581,6 +1588,75 @@ h1 {
 
 .password-field .form-control {
   flex: 1;
+}
+
+.password-field--inline {
+  position: relative;
+  display: block;
+}
+
+.password-field--inline .form-control {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.55rem;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  color: var(--color-primary);
+  background: var(--color-surface-elevated);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.password-toggle__icon {
+  position: relative;
+  width: 1.1rem;
+  height: 0.72rem;
+  border: 2px solid currentColor;
+  border-radius: 999px 999px 720px 720px;
+}
+
+.password-toggle__icon::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.32rem;
+  height: 0.32rem;
+  content: "";
+  background: currentColor;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.password-toggle.is-visible .password-toggle__icon::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.45rem;
+  height: 2px;
+  content: "";
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(-38deg);
 }
 
 .app-footer {

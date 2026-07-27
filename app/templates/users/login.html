@@ -10,19 +10,17 @@
                 <p class="mb-0">Diretoria de Tecnologia da Informação e Comunicação</p>
             </div>
         </div>
-        <div>
+        <div class="login-hero__content">
             <p class="eyebrow text-white">Controle de Incidentes</p>
             <h1>Gestão de incidentes divisão de Cibersegurança.</h1>
-            
         </div>
-        
     </section>
 
     <section class="login-panel" aria-labelledby="login-title">
         <div class="login-card">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <section class="app-notification-stack mb-4" aria-label="Mensagens do sistema" data-notification-container>
+                    <section class="app-notification-stack" aria-label="Mensagens do sistema" data-notification-container>
                     {% for category, message in messages %}
                         <div
                             class="app-notification app-notification--{{ category }}"
@@ -51,9 +49,11 @@
                 </div>
                 <div class="mb-4">
                     <label for="password" class="form-label">Senha <span class="required-mark" aria-hidden="true">*</span></label>
-                    <div class="password-field">
+                    <div class="password-field password-field--inline">
                         <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required aria-required="true">
-                        <button class="btn btn-outline-secondary" type="button" data-toggle-password="password" aria-pressed="false">Mostrar</button>
+                        <button class="password-toggle" type="button" data-toggle-password="password" data-toggle-password-icon aria-pressed="false" aria-label="Mostrar senha" title="Mostrar senha">
+                            <span class="password-toggle__icon" aria-hidden="true"></span>
+                        </button>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary w-100" data-loading-text="Entrando...">Entrar</button>
