@@ -25,6 +25,7 @@ MOJIBAKE_MARKERS = (
 INVALID_TEXT_MARKERS = (REPLACEMENT_CHAR, "\u00ef\u00bf\u00bd")
 BRANCH_PREFIX_RE = re.compile(r"^[\s│├└─]+")
 SPACES_RE = re.compile(r"\s+")
+IDENTITY_RESET_TABLES = {"organizational_units", "organizational_commands", "unidades"}
 
 
 @dataclass
@@ -170,6 +171,10 @@ def parse_organizational_structure_file(path):
 
 
 def _reset_identity(table_names):
+    invalid_names = set(table_names) - IDENTITY_RESET_TABLES
+    if invalid_names:
+        raise ValueError("Tabela inválida para reset de sequência.")
+
     dialect = db.engine.dialect.name
     if dialect == "sqlite":
         has_sequence = db.session.execute(

@@ -41,7 +41,6 @@ runtime_exports/
 # Segredos e variáveis de ambiente
 .env
 .env.*
-!.env.example
 .flaskenv
 *.pem
 *.key
@@ -52,6 +51,10 @@ secrets/
 
 # IDE e artefatos locais
 .vscode/
+.tools/
+.semgrep-home/
+.xdg/
+tests/
 *.xlsx
 *.xls
 *.csv

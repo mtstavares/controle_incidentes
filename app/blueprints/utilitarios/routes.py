@@ -10,7 +10,9 @@ from app.services.buscar_pm_service import (
     BuscarPMError,
     BuscarPMValidationError,
     buscar_pm as consultar_pm,
+    buscar_pm_por_nome as consultar_pm_por_nome,
     mask_query,
+    normalize_name_query,
     normalize_query,
 )
 from app.services.netbox_service import (
@@ -80,25 +82,49 @@ def _audit_netbox_search(ip_value, result, elapsed_ms, result_count=None):
 @limiter.limit("20 per minute", key_func=_rate_limit_key, methods=["POST"])
 def buscar_pm():
     result = None
-    query_value = ""
+    document_query = ""
+    name_query = ""
 
     if request.method == "POST":
         started_at = time.perf_counter()
-        query_value = request.form.get("query", "")
+        search_type = request.form.get("search_type", "document")
+        if search_type == "name":
+            query_value = request.form.get("name_query", "")
+            name_query = query_value
+            normalizer = normalize_name_query
+            consultant = consultar_pm_por_nome
+        else:
+            query_value = request.form.get("document_query", "")
+            document_query = query_value
+            normalizer = normalize_query
+            consultant = consultar_pm
+
         try:
-            query = normalize_query(query_value)
+            query = normalizer(query_value)
         except BuscarPMValidationError as exc:
             flash(exc.message, "danger")
-            return render_template("utilitarios/buscar_pm.html", title="Buscar PM", result=None, query=query_value), 400
+            return render_template(
+                "utilitarios/buscar_pm.html",
+                title="Buscar PM",
+                result=None,
+                document_query=document_query,
+                name_query=name_query,
+            ), 400
 
         if not _can_search():
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_search(query.kind, query.value, "NEGADO", elapsed_ms)
             flash(VIEWER_BLOCK_MESSAGE, "warning")
-            return render_template("utilitarios/buscar_pm.html", title="Buscar PM", result=None, query=query_value), 403
+            return render_template(
+                "utilitarios/buscar_pm.html",
+                title="Buscar PM",
+                result=None,
+                document_query=document_query,
+                name_query=name_query,
+            ), 403
 
         try:
-            result = consultar_pm(query.value)
+            result = consultant(query.value)
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_search(query.kind, query.value, "SUCESSO", elapsed_ms)
             flash("Consulta realizada com sucesso.", "success")
@@ -111,7 +137,13 @@ def buscar_pm():
             _audit_search(query.kind, query.value, "ERRO_INTERNO", elapsed_ms)
             flash("Não foi possível realizar a consulta no momento.", "danger")
 
-    return render_template("utilitarios/buscar_pm.html", title="Buscar PM", result=result, query=query_value)
+    return render_template(
+        "utilitarios/buscar_pm.html",
+        title="Buscar PM",
+        result=result,
+        document_query=document_query,
+        name_query=name_query,
+    )
 
 
 @utilitarios_bp.route("/utilitarios/buscar-ip", methods=["GET", "POST"])

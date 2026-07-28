@@ -5,6 +5,7 @@ services:
     image: divciber:local
     container_name: divciber
     restart: unless-stopped
+    init: true
     ports:
       - "${DIVCIBER_PORT:-5005}:8000"
     env_file:
@@ -15,6 +16,11 @@ services:
     volumes:
       - ../divciber-data/instance:/app/instance
       - ../divciber-data/logs:/app/logs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     command: >
       gunicorn --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-1} run:app
     healthcheck:

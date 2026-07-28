@@ -1,8 +1,10 @@
 import base64
+import html
 import re
 import threading
 import time
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
 
 import requests
@@ -11,13 +13,16 @@ from flask import current_app
 from app.services.internal_api import (
     InternalAPIClient,
     InternalAPIConfigurationError,
+    PM_EMAIL_ENDPOINTS,
     PM_ENDPOINTS,
     SERVICE_PM_CDPM,
+    SERVICE_PM_EMAIL,
     build_endpoint,
 )
 
 
 VALID_QUERY_RE = re.compile(r"^\d{6}$|^\d{11}$")
+VALID_NAME_RE = re.compile(r"^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'.-]{2,79}$")
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -28,7 +33,7 @@ class BuscarPMError(Exception):
 
 
 class BuscarPMValidationError(BuscarPMError):
-    message = "CPF ou RE inválido."
+    message = "CPF, RE ou nome inválido."
     audit_result = "VALIDACAO"
 
 
@@ -77,15 +82,111 @@ class BuscarPMQuery:
 
 
 def normalize_query(value):
-    digits = re.sub(r"\D", "", str(value or ""))[:11]
+    raw_value = str(value or "").strip()
+    digits = re.sub(r"\D", "", raw_value)
+    digits = digits[:11]
+    if not digits or re.sub(r"\d", "", raw_value).strip(" .-()/"):
+        raise BuscarPMValidationError()
     if not VALID_QUERY_RE.fullmatch(digits):
         raise BuscarPMValidationError()
     return BuscarPMQuery(value=digits, kind="CPF" if len(digits) == 11 else "RE")
 
 
+def normalize_name_query(value):
+    raw_value = str(value or "").strip()
+    name = re.sub(r"\s+", " ", raw_value)
+    if any(char.isdigit() for char in name) or not VALID_NAME_RE.fullmatch(name):
+        raise BuscarPMValidationError()
+    return BuscarPMQuery(value=name[:80], kind="NOME")
+
+
 def mask_query(value):
     digits = re.sub(r"\D", "", str(value or ""))
-    return f"***{digits[-4:]}" if digits else "***"
+    if digits:
+        return f"***{digits[-4:]}"
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return f"{text[:3].upper()}***" if text else "***"
+
+
+class PMEmailSearchParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.hidden_fields: dict[str, str] = {}
+        self.in_grid = False
+        self.in_row = False
+        self.in_cell = False
+        self.current_cell = ""
+        self.current_row: list[str] = []
+        self.rows: list[dict[str, str]] = []
+        self.current_tooltip = ""
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "input":
+            name = attrs_dict.get("name")
+            input_type = (attrs_dict.get("type") or "").lower()
+            if name and input_type == "hidden":
+                self.hidden_fields[name] = attrs_dict.get("value", "")
+        if tag == "table" and attrs_dict.get("id") == "gridEmail":
+            self.in_grid = True
+        elif self.in_grid and tag == "tr":
+            self.in_row = True
+            self.current_row = []
+            self.current_tooltip = ""
+        elif self.in_grid and self.in_row and tag in {"td", "th"}:
+            self.in_cell = True
+            self.current_cell = ""
+        elif self.in_grid and self.in_row and tag == "a":
+            title = attrs_dict.get("title")
+            if title:
+                self.current_tooltip = title
+
+    def handle_endtag(self, tag):
+        if self.in_grid and tag == "table":
+            self.in_grid = False
+        elif self.in_grid and self.in_row and tag == "tr":
+            if len(self.current_row) >= 5 and self.current_row[0].lower() != "posto":
+                details = _parse_tooltip_details(self.current_tooltip)
+                self.rows.append(
+                    {
+                        "posto": _text(self.current_row[0]),
+                        "re": _text(self.current_row[1]),
+                        "nome": _text(self.current_row[2]),
+                        "email": _text(self.current_row[3]),
+                        "status": _text(self.current_row[4]),
+                        "codigo_opm": _text(details.get("codigo_opm")),
+                        "opm": _text(details.get("opm")),
+                    }
+                )
+            self.in_row = False
+        elif self.in_grid and self.in_cell and tag in {"td", "th"}:
+            self.current_row.append(_text(self.current_cell, default=""))
+            self.in_cell = False
+
+    def handle_data(self, data):
+        if self.in_grid and self.in_cell:
+            self.current_cell += data
+
+
+def _parse_tooltip_details(raw_title):
+    if not raw_title:
+        return {}
+    text = html.unescape(re.sub(r"<[^>]+>", " ", raw_title))
+    text = re.sub(r"\s+", " ", text).strip()
+    result = {}
+    opm_code_match = re.search(r"Cod\.?\s*OPM:\s*([^ ]+)", text, flags=re.IGNORECASE)
+    if opm_code_match:
+        result["codigo_opm"] = opm_code_match.group(1).strip()
+    opm_match = re.search(r"OPM:\s*(.*?)(?:\s+Status:|$)", text, flags=re.IGNORECASE)
+    if opm_match:
+        result["opm"] = opm_match.group(1).strip()
+    return result
+
+
+def _parse_email_search_html(page_html):
+    parser = PMEmailSearchParser()
+    parser.feed(page_html or "")
+    return parser
 
 
 def _cache_ttl():
@@ -194,6 +295,79 @@ def _request_optional_json(client, path):
         return {"dados": []}
 
 
+def _request_html(client, method, path, data=None):
+    try:
+        response = client.get(path) if method == "GET" else client.post_form(path, data or {})
+    except InternalAPIConfigurationError as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: configuração ausente.")
+        raise BuscarPMUnavailableError() from exc
+    except requests.Timeout as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: timeout.")
+        raise BuscarPMTimeoutError() from exc
+    except requests.exceptions.SSLError as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: certificado TLS inválido.")
+        raise BuscarPMCertificateError() from exc
+    except requests.exceptions.ConnectionError as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: erro de conexão.")
+        raise BuscarPMConnectionError() from exc
+    except requests.RequestException as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: %s.", exc.__class__.__name__)
+        raise BuscarPMUnavailableError() from exc
+
+    if response.status_code in {401, 403}:
+        raise BuscarPMAuthError()
+    if response.status_code >= 500:
+        raise BuscarPMUnavailableError()
+    if response.status_code not in {200, 302}:
+        raise BuscarPMNotFoundError()
+    return response.text or ""
+
+
+def buscar_pm_por_nome(query_value):
+    query = normalize_name_query(query_value)
+    name_value = query.value
+    cache_key = f"nome:{name_value.casefold()}"
+    cached = _cache_get(cache_key)
+    if cached:
+        result = dict(cached)
+        result["cache_hit"] = True
+        return result
+
+    endpoint = PM_EMAIL_ENDPOINTS["consulta_email"]
+    try:
+        client_context = InternalAPIClient(SERVICE_PM_EMAIL)
+    except InternalAPIConfigurationError as exc:
+        current_app.logger.warning("Falha na consulta PM por nome: configuração ausente.")
+        raise BuscarPMUnavailableError() from exc
+
+    with client_context as client:
+        initial_parser = _parse_email_search_html(_request_html(client, "GET", endpoint))
+        form_data = {
+            **initial_parser.hidden_fields,
+            "ddlUnidade": "0",
+            "txtRE": "",
+            "txtCPF": "",
+            "txtNome": name_value,
+            "txtEmail": "",
+            "ddlStatus": "0",
+            "btnBuscar": "Pesquisar",
+        }
+        parser = _parse_email_search_html(_request_html(client, "POST", endpoint, form_data))
+
+    if not parser.rows:
+        raise BuscarPMNotFoundError()
+
+    result = {
+        "mode": "nome",
+        "query_kind": "NOME",
+        "resultados_nome": parser.rows,
+        "total_results": len(parser.rows),
+        "cache_hit": False,
+    }
+    _cache_set(cache_key, result)
+    return result
+
+
 def _re_from_payload(data):
     numero = _safe_get(data, "re", "numero")
     digito = _safe_get(data, "re", "digito")
@@ -228,8 +402,19 @@ def _dados_policial(data):
 
 
 def _contato(data):
+    emails = []
+    seen_emails = set()
+    for item in data.get("emails", []) if isinstance(data, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        email = _text(item.get("endereco"), default="")
+        email_key = email.casefold()
+        if email and email_key not in seen_emails:
+            emails.append(email)
+            seen_emails.add(email_key)
     return {
-        "email": _text(_safe_get(data, "emails", 0, "endereco")),
+        "email": _text("; ".join(emails)),
+        "emails": emails,
         "telefone": _text(
             "-".join(
                 part
@@ -309,33 +494,31 @@ def _cpf_from_re(client, re_value):
     return re.sub(r"\D", "", str(cpf))
 
 
-def buscar_pm(query_value):
-    query = normalize_query(query_value)
-    with InternalAPIClient(SERVICE_PM_CDPM) as client:
-        cpf = query.value if query.kind == "CPF" else _cpf_from_re(client, query.value)
-        cached = _cache_get(cpf)
-        if cached:
-            result = dict(cached)
-            result["cache_hit"] = True
-            result["query_kind"] = query.kind
-            return result
+def _buscar_pm_por_cpf_com_client(client, cpf, query_kind):
+    cached = _cache_get(cpf)
+    if cached:
+        result = dict(cached)
+        result["cache_hit"] = True
+        result["query_kind"] = query_kind
+        return result
 
-        resumidos = _first_dados(_request_json(client, build_endpoint(PM_ENDPOINTS["dados_por_cpf"], cpf=cpf)))
-        caracteristicas = _first_optional_dados(
-            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["caracteristica_fisica"], cpf=cpf))
-        )
-        documentos = _first_optional_dados(
-            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["documentos"], cpf=cpf))
-        )
-        contato = _first_optional_dados(
-            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["informacao_contato"], cpf=cpf))
-        )
-        foto_payload = _first_optional_dados(
-            _request_optional_json(client, build_endpoint(PM_ENDPOINTS["pesquisa_foto"], cpf=cpf))
-        )
+    resumidos = _first_dados(_request_json(client, build_endpoint(PM_ENDPOINTS["dados_por_cpf"], cpf=cpf)))
+    caracteristicas = _first_optional_dados(
+        _request_optional_json(client, build_endpoint(PM_ENDPOINTS["caracteristica_fisica"], cpf=cpf))
+    )
+    documentos = _first_optional_dados(
+        _request_optional_json(client, build_endpoint(PM_ENDPOINTS["documentos"], cpf=cpf))
+    )
+    contato = _first_optional_dados(
+        _request_optional_json(client, build_endpoint(PM_ENDPOINTS["informacao_contato"], cpf=cpf))
+    )
+    foto_payload = _first_optional_dados(
+        _request_optional_json(client, build_endpoint(PM_ENDPOINTS["pesquisa_foto"], cpf=cpf))
+    )
 
     result = {
-        "query_kind": query.kind,
+        "mode": "detalhe",
+        "query_kind": query_kind,
         "cpf_cache_key": cpf,
         "dados": _dados_policial(resumidos),
         "contato": _contato(contato),
@@ -346,3 +529,16 @@ def buscar_pm(query_value):
     }
     _cache_set(cpf, result)
     return result
+
+
+def _buscar_pm_por_re_com_client(client, re_value):
+    cpf = _cpf_from_re(client, re_value)
+    return _buscar_pm_por_cpf_com_client(client, cpf, "RE")
+
+
+def buscar_pm(query_value):
+    query = normalize_query(query_value)
+    with InternalAPIClient(SERVICE_PM_CDPM) as client:
+        if query.kind == "RE":
+            return _buscar_pm_por_re_com_client(client, query.value)
+        return _buscar_pm_por_cpf_com_client(client, query.value, query.kind)
