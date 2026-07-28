@@ -103,8 +103,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    document.querySelectorAll('[data-pm-search-form]').forEach(function (form) {
-        const input = form.querySelector('input[name="query"]');
+    document.querySelectorAll('[data-pm-document-search-form]').forEach(function (form) {
+        const input = form.querySelector('input[name="document_query"]');
         if (!input) return;
 
         const sanitize = function () {
@@ -118,9 +118,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
         form.addEventListener('submit', function (event) {
             sanitize();
-            if (!/^\d{6}$|^\d{11}$/.test(input.value)) {
+            const value = input.value.trim();
+            if (!/^\d{6}$|^\d{11}$/.test(value)) {
                 event.preventDefault();
                 showApplicationNotification('CPF ou RE inválido.', 'danger');
+                return;
+            }
+            window.setTimeout(function () {
+                input.value = '';
+            }, 0);
+        });
+    });
+
+    document.querySelectorAll('[data-pm-name-search-form]').forEach(function (form) {
+        const input = form.querySelector('input[name="name_query"]');
+        if (!input) return;
+
+        const sanitize = function () {
+            input.value = input.value
+                .replace(/[^\p{L}\p{M}\s'.-]/gu, '')
+                .replace(/\s+/g, ' ')
+                .slice(0, 80);
+        };
+
+        input.addEventListener('input', sanitize);
+        input.addEventListener('paste', function () {
+            window.setTimeout(sanitize, 0);
+        });
+
+        form.addEventListener('submit', function (event) {
+            sanitize();
+            if (!/^[\p{L}\p{M}][\p{L}\p{M}\s'.-]{2,79}$/u.test(input.value.trim())) {
+                event.preventDefault();
+                showApplicationNotification('Nome inválido.', 'danger');
                 return;
             }
             window.setTimeout(function () {
@@ -324,10 +354,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.querySelectorAll('form[data-prevent-duplicate]').forEach(function (form) {
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (event) {
+            if (event.defaultPrevented) {
+                return;
+            }
+            form.setAttribute('aria-busy', 'true');
             const submitters = form.querySelectorAll('button[type="submit"]');
             submitters.forEach(function (button) {
                 button.disabled = true;
+                button.classList.add('is-loading');
                 if (button.dataset.loadingText) {
                     button.dataset.originalText = button.textContent;
                     button.textContent = button.dataset.loadingText;

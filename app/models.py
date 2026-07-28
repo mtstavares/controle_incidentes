@@ -1,9 +1,8 @@
-# app/models.py
-
 from datetime import datetime, timezone
-from app import db # Importando a instância do SQLAlchemy de app/__init__.py
-from werkzeug.security import generate_password_hash, check_password_hash # Importando funções para hash de senha
-from flask_login import UserMixin # Importando UserMixin para integração com Flask-Login
+
+from flask_login import UserMixin
+
+from app import db
 
 
 def utc_now():
@@ -17,35 +16,22 @@ class TimestampMixin:
 
 
 class User(UserMixin, TimestampMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True) # ID do usuário
-    username = db.Column(db.String(50), unique=True, nullable=False, index=True) # Nome de usuário único
-    name = db.Column(db.String(150), nullable=False) # Nome do usuário
-    email = db.Column(db.String(255), unique=True, nullable=False, index=True) # Email do usuário único
-    profile = db.Column(db.String(50), nullable=False) # Perfil do usuário (admin, user ou viewer)
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    profile = db.Column(db.String(50), nullable=False)
     is_temp_password = db.Column(db.Boolean, default=True, nullable=False)
     must_change_password = db.Column(db.Boolean, default=True, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     deleted_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
-    password = db.Column(db.String(256), nullable=False) # Hash da senha do usuário
-    
-    
-    # Relacionamento: um usuário pode ter várias análises e várias observações
-    # 'backref' permite acessar o usuário a partir da análise (ex: analise.autor)
+    password = db.Column(db.String(256), nullable=False)
+
     incidente = db.relationship('Incidente', backref='autor', lazy=True)
     observacoes = db.relationship('IncidenteObs', backref='autor_obs', lazy=True)
     audit_logs = db.relationship('AuditLog', backref='usuario', lazy=True)
     deleted_by = db.relationship('User', remote_side=[id], foreign_keys=[deleted_by_id], post_update=True)
-    
-    # def set_password(self, password):
-    #     self.password_hash = generate_password_hash(password) # Gera o hash da senha
-    # def set_password(self, password):
-    #     self.password_hash = generate_password_hash(password) # Gera o hash da senha
-    
-    # def check_password(self, password):
-    #     return check_password_hash(self.password_hash, password) # Verifica a senha fornecida com o hash armazenado
-    # def check_password(self, password):
-    #     return check_password_hash(self.password_hash, password) # Verifica a senha fornecida com o hash armazenado
-    
+
     def __repr__(self):
         return f'<User {self.username}>'
     

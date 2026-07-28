@@ -9,35 +9,94 @@
         </div>
     </div>
 
-    <form class="filter-panel pm-search-form" method="POST" action="{{ url_for('utilitarios.buscar_pm') }}" data-pm-search-form novalidate>
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div class="form-field">
-            <label for="pm_query">CPF ou RE</label>
-            <input
-                class="form-control"
-                id="pm_query"
-                name="query"
-                inputmode="numeric"
-                autocomplete="off"
-                pattern="[0-9]{6}|[0-9]{11}"
-                maxlength="11"
-                value="{{ query or '' }}"
-                placeholder="Digite o CPF ou RE do Policial Militar"
-                {% if current_user.profile == 'Viewer' %}aria-describedby="pm-viewer-help"{% endif %}
-                required
-            >
-            {% if current_user.profile == 'Viewer' %}
-                <p id="pm-viewer-help" class="form-text text-muted">
-                    Seu perfil possui apenas permissão de visualização. A consulta de policiais militares é permitida apenas para usuários Admin e User.
-                </p>
-            {% endif %}
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-primary" type="submit" {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar</button>
-        </div>
-    </form>
+    <div class="pm-search-layout">
+        <form class="filter-panel pm-search-form" method="POST" action="{{ url_for('utilitarios.buscar_pm') }}" data-pm-document-search-form data-prevent-duplicate novalidate>
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="search_type" value="document">
+            <div class="form-field">
+                <label for="pm_document_query">CPF ou RE</label>
+                <input
+                    class="form-control"
+                    id="pm_document_query"
+                    name="document_query"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    pattern="[0-9]{6}|[0-9]{11}"
+                    maxlength="11"
+                    value="{{ document_query or '' }}"
+                    placeholder="Digite o CPF ou RE do Policial Militar"
+                    {% if current_user.profile == 'Viewer' %}aria-describedby="pm-viewer-help"{% endif %}
+                    required
+                >
+                {% if current_user.profile == 'Viewer' %}
+                    <p id="pm-viewer-help" class="form-text text-muted">
+                        Seu perfil possui apenas permissão de visualização. A consulta de policiais militares é permitida apenas para usuários Admin e User.
+                    </p>
+                {% endif %}
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" type="submit" data-loading-text="Consultando..." {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar CPF/RE</button>
+            </div>
+        </form>
 
-    {% if result %}
+        <form class="filter-panel pm-search-form" method="POST" action="{{ url_for('utilitarios.buscar_pm') }}" data-pm-name-search-form data-prevent-duplicate novalidate>
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="search_type" value="name">
+            <div class="form-field">
+                <label for="pm_name_query">Nome</label>
+                <input
+                    class="form-control"
+                    id="pm_name_query"
+                    name="name_query"
+                    autocomplete="off"
+                    maxlength="80"
+                    value="{{ name_query or '' }}"
+                    placeholder="Digite o nome do Policial Militar"
+                    required
+                >
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-secondary" type="submit" data-loading-text="Consultando..." {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar nome</button>
+            </div>
+        </form>
+    </div>
+
+    {% if result and result.mode == 'nome' %}
+        <section class="pm-card" aria-labelledby="pm-name-results-title">
+            <div class="section-heading">
+                <h2 id="pm-name-results-title">Resultados encontrados</h2>
+                <span class="badge text-bg-light">{{ result.total_results }} registro(s)</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle pm-name-results-table">
+                    <thead>
+                        <tr>
+                            <th>Posto</th>
+                            <th>RE</th>
+                            <th>Nome</th>
+                            <th>E-mail</th>
+                            <th>Status</th>
+                            <th>OPM</th>
+                            <th>Código OPM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in result.resultados_nome %}
+                            <tr>
+                                <td>{{ item.posto }}</td>
+                                <td>{{ item.re }}</td>
+                                <td>{{ item.nome }}</td>
+                                <td>{{ item.email }}</td>
+                                <td>{{ item.status }}</td>
+                                <td>{{ item.opm }}</td>
+                                <td>{{ item.codigo_opm }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    {% elif result %}
         <div class="pm-result-grid">
             <article class="pm-card pm-card--identity">
                 <div class="pm-photo">
@@ -66,7 +125,18 @@
             <article class="pm-card">
                 <h2>Contato</h2>
                 <dl class="pm-detail-list">
-                    <div><dt>Email funcional</dt><dd>{{ result.contato.email }}</dd></div>
+                    <div>
+                        <dt>E-mails</dt>
+                        <dd>
+                            {% if result.contato.emails %}
+                                {% for email in result.contato.emails %}
+                                    <span class="d-block">{{ email }}</span>
+                                {% endfor %}
+                            {% else %}
+                                {{ result.contato.email }}
+                            {% endif %}
+                        </dd>
+                    </div>
                     <div><dt>Telefone</dt><dd>{{ result.contato.telefone }}</dd></div>
                 </dl>
             </article>

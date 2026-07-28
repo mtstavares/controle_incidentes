@@ -13,6 +13,7 @@ from app.services.user_service import (
     normalizar_nome,
     normalizar_usuario,
     senha_confere,
+    senha_usa_hash_legado,
     usuario_inativo_por_username_ou_email,
     username_ativo_existente,
     validar_dados_usuario,
@@ -177,8 +178,12 @@ def login():
         flash("Nome de usuário ou senha incorretos.", "danger")
         return redirect(url_for("users.login"))
 
+    session.clear()
     session.permanent = True
     login_user(user)
+    if senha_usa_hash_legado(user):
+        user.password = gerar_hash_senha(password)
+        db.session.commit()
     registrar_auditoria(
         acao=AuditAction.LOGIN,
         modulo="Autenticação",

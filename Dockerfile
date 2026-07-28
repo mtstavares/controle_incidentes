@@ -1,7 +1,10 @@
 # Usa uma imagem leve do Python baseada em Debian
 FROM python:3.12-slim
 
-ENV TZ=America/Sao_Paulo
+ENV TZ=America/Sao_Paulo \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
 
 # Define o diretório de trabalho dentro do container
 WORKDIR /app
@@ -20,13 +23,17 @@ COPY requirements.txt .
 
 # Instala as dependências do Python
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install gunicorn
 
 # Copia todo o conteúdo do projeto para dentro do container
 COPY . .
 
 # Cria a pasta instance para o banco de dados, se não existir
-RUN mkdir -p instance
+RUN addgroup --system --gid 1000 app \
+    && adduser --system --uid 1000 --ingroup app app \
+    && mkdir -p instance logs \
+    && chown -R app:app /app /tmp
+
+USER app
 
 # Expõe a porta interna que o Gunicorn usará
 EXPOSE 8000

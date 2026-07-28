@@ -97,5 +97,13 @@ def gerar_hash_senha(password):
 def senha_confere(user, password):
     stored = user.password or ""
     if stored.startswith(("scrypt:", "pbkdf2:", "argon2:")):
-        return check_password_hash(stored, password)
+        try:
+            return check_password_hash(stored, password)
+        except ValueError:
+            return False
     return stored == legacy_hash(password)
+
+
+def senha_usa_hash_legado(user):
+    stored = user.password or ""
+    return bool(stored) and not stored.startswith(("scrypt:", "pbkdf2:", "argon2:"))
