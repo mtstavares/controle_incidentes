@@ -108,6 +108,10 @@ def _default_backup_dir():
     return current_app.config.get("DIVCIBER_BACKUP_DEFAULT_DIR")
 
 
+def _legacy_instance_backup_dir():
+    return str((_instance_root() / "backups").resolve())
+
+
 def _next_run_from(now_value, interval_hours):
     return now_value + timedelta(hours=interval_hours)
 
@@ -175,6 +179,10 @@ def _ensure_layout(root):
 def get_or_create_config():
     config = BackupConfig.query.order_by(BackupConfig.id.asc()).first()
     if config:
+        if config.diretorio == _legacy_instance_backup_dir():
+            config.diretorio = _default_backup_dir()
+            config.updated_at = utc_now()
+            db.session.commit()
         return config
     now_value = utc_now()
     interval = int(current_app.config.get("DIVCIBER_BACKUP_INTERVAL_HOURS", 6))

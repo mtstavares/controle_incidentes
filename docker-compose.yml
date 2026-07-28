@@ -16,6 +16,7 @@ services:
     volumes:
       - ../divciber-data/instance:/app/instance
       - ../divciber-data/logs:/app/logs
+      - ../divciber-backups:/app/backups
     security_opt:
       - no-new-privileges:true
     cap_drop:
