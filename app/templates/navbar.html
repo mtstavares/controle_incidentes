@@ -74,6 +74,10 @@
                 <span class="sidebar-link__icon" aria-hidden="true">L</span>
                 <span>Logs de auditoria</span>
             </a>
+            <a class="sidebar-link" href="{{ url_for('admin.backup_admin') }}" {% if endpoint.startswith('admin.backup') %}aria-current="page"{% endif %}>
+                <span class="sidebar-link__icon" aria-hidden="true">BK</span>
+                <span>Backup</span>
+            </a>
         </nav>
     </div>
     {% endif %}

@@ -1,14 +1,27 @@
 import re
+import threading
 import unicodedata
+import zipfile
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from cryptography.exceptions import InvalidTag
+from flask import (
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user
 from sqlalchemy.exc import IntegrityError
 
-from app.blueprints.admin import admin_bp
 from app import db
+from app.blueprints.admin import admin_bp
 from app.models import (
     AuditLog,
+    BackupRegistro,
     Incidente,
     OrganizationalCommand,
     OrganizationalUnit,
@@ -17,11 +30,30 @@ from app.models import (
     Unidades,
     User,
 )
-from app.services.authz import admin_required
 from app.services.audit_service import AuditAction, registrar_auditoria
-from app.services.timezone_service import local_date_bounds_as_utc_naive, parse_iso_date, utc_now
-from app.services.user_service import PERFIS_PERMITIDOS
+from app.services.authz import admin_required
+from app.services.backup_service import (
+    BackupConfigError,
+    BackupError,
+    BackupIntegrityError,
+    backup_status_summary,
+    create_backup,
+    delete_backup,
+    get_or_create_config,
+    list_backup_records,
+    restore_backup,
+    update_config,
+    validate_backup_directory,
+    validate_backup_record,
+)
+from app.services.timezone_service import (
+    local_date_bounds_as_utc_naive,
+    parse_iso_date,
+    utc_now,
+)
+from app.services.user_service import PERFIS_PERMITIDOS, senha_confere
 
+BACKUP_MODULE = "Administração - Backup"
 MAX_LIBRARY_NAME_LENGTH = 100
 
 
@@ -135,6 +167,32 @@ def _parse_date(value, end=False):
 
 def _wants_json():
     return request.accept_mimetypes.best == "application/json" or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _human_size(value):
+    size = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+
+
+def _parse_int_field(name, default=None):
+    raw = request.form.get(name)
+    if raw in (None, ""):
+        return default
+    if not str(raw).isdigit():
+        raise BackupConfigError("Parâmetros numéricos inválidos.")
+    return int(raw)
+
+
+def _run_manual_backup_async(app, user_id):
+    with app.app_context():
+        user = User.query.get(user_id)
+        try:
+            create_backup(manual=True, user=user)
+        except (BackupError, OSError, ValueError, zipfile.BadZipFile, InvalidTag) as exc:
+            app.logger.warning("Backup manual DivCiber falhou: %s", str(exc).replace("\n", " ")[:300])
 
 
 def _delete_user_response(message, status_code, category="danger"):
@@ -854,6 +912,11 @@ def audit_logs():
             AuditAction.EXCLUIR_OBSERVACAO,
             AuditAction.ACESSO_NEGADO,
             AuditAction.IMPORTAR_CREDENCIAIS,
+            "BACKUP_MANUAL",
+            "BACKUP_AUTOMATICO",
+            "VALIDAR_BACKUP",
+            "RESTAURACAO_SOLICITADA",
+            "RESTAURACAO_CONCLUIDA",
         ],
     )
 
@@ -870,3 +933,218 @@ def audit_log_detail(log_id):
         descricao="Visualização detalhada de log de auditoria.",
     )
     return render_template("admin/audit_log_detail.html", title="Detalhe do log", log=audit_log)
+
+
+@admin_bp.route("/admin/backup", methods=["GET"])
+@admin_required
+def backup_admin():
+    page = max(request.args.get("page", 1, type=int), 1)
+    per_page = min(max(request.args.get("per_page", 25, type=int), 1), 100)
+    filters = {
+        "tipo": request.args.get("tipo", "").strip(),
+        "status": request.args.get("status", "").strip(),
+    }
+    pagination = list_backup_records(filters).paginate(page=page, per_page=per_page, error_out=False)
+    status = backup_status_summary()
+    registrar_auditoria(
+        acao=AuditAction.VISUALIZAR,
+        modulo=BACKUP_MODULE,
+        entidade="BackupConfig",
+        descricao="Consulta à administração de backup.",
+    )
+    return render_template(
+        "admin/backup.html",
+        title="Backup",
+        status=status,
+        backups=pagination.items,
+        pagination=pagination,
+        filters=filters,
+        human_size=_human_size,
+    )
+
+
+@admin_bp.route("/admin/backup/config", methods=["POST"])
+@admin_required
+def backup_config_update():
+    try:
+        current_config = get_or_create_config()
+        config = update_config(
+            diretorio=request.form.get("diretorio", ""),
+            intervalo_horas=_parse_int_field("intervalo_horas"),
+            habilitado=request.form.get("habilitado") == "1",
+            retencao_dias=_parse_int_field("retencao_dias", current_config.retencao_dias),
+            min_backups_completos=_parse_int_field("min_backups_completos", current_config.min_backups_completos),
+            create_dir=False,
+            user=current_user,
+        )
+        flash("Configuração de backup salva com sucesso.", "success")
+        current_app.logger.info("Configuração de backup atualizada: id=%s", config.id)
+    except BackupError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/testar-diretorio", methods=["POST"])
+@admin_required
+def backup_test_directory():
+    try:
+        validate_backup_directory(request.form.get("diretorio", ""), create=False)
+        registrar_auditoria(
+            acao="VALIDAR_BACKUP",
+            modulo=BACKUP_MODULE,
+            entidade="BackupConfig",
+            descricao="Diretório de backup testado com sucesso.",
+        )
+        flash("Diretório validado com sucesso. A aplicação possui permissão de escrita.", "success")
+    except BackupError as exc:
+        registrar_auditoria(
+            acao="VALIDAR_BACKUP",
+            modulo=BACKUP_MODULE,
+            entidade="BackupConfig",
+            descricao="Falha ao testar diretório de backup.",
+            resultado="FALHA",
+        )
+        flash(str(exc), "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/executar", methods=["POST"])
+@admin_required
+def backup_run_now():
+    try:
+        config = get_or_create_config()
+        validate_backup_directory(config.diretorio, create=False)
+        after_id = db.session.query(db.func.coalesce(db.func.max(BackupRegistro.id), 0)).scalar() or 0
+        app = current_app._get_current_object()
+        thread = threading.Thread(
+            target=_run_manual_backup_async,
+            args=(app, current_user.id),
+            name="divciber-manual-backup",
+            daemon=True,
+        )
+        thread.start()
+        registrar_auditoria(
+            acao="BACKUP_MANUAL",
+            modulo=BACKUP_MODULE,
+            entidade="BackupRegistro",
+            descricao="Backup manual solicitado.",
+            resultado="INICIADO",
+        )
+        if _wants_json():
+            return jsonify({"message": "Backup manual iniciado.", "after_id": after_id}), 202
+        flash("Backup manual iniciado. Atualize a página em alguns instantes para acompanhar o resultado.", "success")
+    except BackupError as exc:
+        if _wants_json():
+            return jsonify({"message": str(exc)}), 400
+        flash(str(exc), "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/status-manual", methods=["GET"])
+@admin_required
+def backup_manual_status():
+    after_id = max(request.args.get("after_id", 0, type=int), 0)
+    latest = (
+        BackupRegistro.query.filter(
+            BackupRegistro.id > after_id,
+            BackupRegistro.criado_por == "manual",
+        )
+        .order_by(BackupRegistro.id.desc())
+        .first()
+    )
+    running = BackupRegistro.query.filter(
+        BackupRegistro.id > after_id,
+        BackupRegistro.criado_por == "manual",
+        BackupRegistro.status == "EM_ANDAMENTO",
+    ).count()
+    if not latest:
+        return jsonify({"state": "running", "running": running})
+    if latest.status == "EM_ANDAMENTO":
+        return jsonify({"state": "running", "running": running, "backup_id": latest.id})
+    if latest.status == "CONCLUIDO" and latest.integridade_status == "VALIDO":
+        return jsonify({
+            "state": "success",
+            "backup_id": latest.id,
+            "tipo": latest.tipo,
+            "arquivo": latest.arquivo_nome,
+        })
+    return jsonify({
+        "state": "failed",
+        "backup_id": latest.id,
+        "message": latest.erro_sanitizado or "Backup falhou.",
+    })
+
+
+@admin_bp.route("/admin/backup/<int:backup_id>/validar", methods=["POST"])
+@admin_required
+def backup_validate(backup_id):
+    record = BackupRegistro.query.get_or_404(backup_id)
+    try:
+        validate_backup_record(record)
+        flash("Integridade do backup validada com sucesso.", "success")
+    except BackupError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/<int:backup_id>/restaurar", methods=["POST"])
+@admin_required
+def backup_restore(backup_id):
+    record = BackupRegistro.query.get_or_404(backup_id)
+    try:
+        admin_user = User.query.filter_by(id=current_user.id, is_active=True).first()
+        if not admin_user or not senha_confere(admin_user, request.form.get("senha_admin") or ""):
+            registrar_auditoria(
+                acao=AuditAction.ACESSO_NEGADO,
+                modulo=BACKUP_MODULE,
+                entidade="BackupRegistro",
+                entidade_id=record.backup_uid,
+                descricao="Restauração de backup negada por senha administrativa inválida.",
+                resultado="NEGADO",
+            )
+            flash("Senha administrativa inválida. A restauração foi cancelada.", "danger")
+            return redirect(url_for("admin.backup_admin"))
+        restore_backup(record, confirmation=(request.form.get("confirmacao") or "").strip(), user=current_user)
+        flash("Sistema restaurado com sucesso. Faça login novamente caso a sessão tenha sido alterada pelo backup.", "success")
+    except BackupConfigError as exc:
+        flash(str(exc), "danger")
+    except BackupIntegrityError:
+        flash("Backup inválido ou adulterado. A restauração foi cancelada.", "danger")
+    except BackupError:
+        flash("Não foi possível restaurar o backup selecionado.", "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/<int:backup_id>/excluir", methods=["POST"])
+@admin_required
+def backup_delete(backup_id):
+    record = BackupRegistro.query.get_or_404(backup_id)
+    try:
+        delete_backup(record, user=current_user)
+        flash("Backup excluído com sucesso.", "success")
+    except BackupError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("admin.backup_admin"))
+
+
+@admin_bp.route("/admin/backup/<int:backup_id>/manifesto", methods=["GET"])
+@admin_required
+def backup_manifest(backup_id):
+    record = BackupRegistro.query.get_or_404(backup_id)
+    try:
+        manifest = validate_backup_record(record)
+    except BackupError:
+        abort(404)
+    safe_manifest = {
+        "backup_uid": manifest.get("backup_uid"),
+        "backup_type": manifest.get("backup_type"),
+        "created_at_local": manifest.get("created_at_local"),
+        "format_version": manifest.get("format_version"),
+        "base_backup_uid": manifest.get("base_backup_uid"),
+        "previous_backup_uid": manifest.get("previous_backup_uid"),
+        "included_components": manifest.get("included_components", {}),
+        "excluded_components": manifest.get("excluded_components", {}),
+        "included_files": manifest.get("included_files", []),
+        "app_commit": manifest.get("app_commit"),
+    }
+    return jsonify(safe_manifest)

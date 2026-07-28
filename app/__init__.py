@@ -171,6 +171,12 @@ def create_app(config_class=ProductionConfig):
         return format_local_datetime(value)
 
     _configure_file_logging(app)
+    try:
+        from app.services.backup_service import start_backup_scheduler
+
+        start_backup_scheduler(app)
+    except Exception as exc:
+        app.logger.warning("Agendador de backup não iniciado: %s", str(exc)[:300])
 
     @app.errorhandler(403)
     def forbidden(error):

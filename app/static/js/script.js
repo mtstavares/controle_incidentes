@@ -1011,4 +1011,173 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    const backupRunForm = document.querySelector('[data-backup-run-form]');
+    if (backupRunForm) {
+        const submitButton = backupRunForm.querySelector('button[type="submit"]');
+        let backupNotification = null;
+        let backupNotificationText = null;
+
+        const createBackupNotification = function (message) {
+            const container = document.querySelector('[data-notification-container]') || createNotificationContainer();
+            const notification = document.createElement('div');
+            notification.className = 'app-notification app-notification--info app-notification--persistent';
+            notification.setAttribute('role', 'status');
+            notification.setAttribute('aria-live', 'polite');
+
+            const spinner = document.createElement('span');
+            spinner.className = 'app-notification__spinner';
+            spinner.setAttribute('aria-hidden', 'true');
+
+            const content = document.createElement('div');
+            content.className = 'app-notification__content';
+            content.textContent = message;
+
+            notification.appendChild(spinner);
+            notification.appendChild(content);
+            container.appendChild(notification);
+            backupNotification = notification;
+            backupNotificationText = content;
+        };
+
+        const finishBackupNotification = function (message, type) {
+            if (!backupNotification) {
+                showApplicationNotification(message, type);
+                return;
+            }
+            backupNotification.className = `app-notification app-notification--${type}`;
+            const spinner = backupNotification.querySelector('.app-notification__spinner');
+            if (spinner) {
+                spinner.remove();
+            }
+            backupNotificationText.textContent = message;
+            initializeNotification(backupNotification);
+        };
+
+        const pollBackupStatus = async function (statusUrl, afterId) {
+            const url = new URL(statusUrl, window.location.origin);
+            url.searchParams.set('after_id', afterId);
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.message || 'Não foi possível consultar o status do backup.');
+            }
+            return payload;
+        };
+
+        backupRunForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (submitButton) {
+                submitButton.disabled = true;
+            }
+            createBackupNotification('Backup em execução...');
+
+            try {
+                const response = await fetch(backupRunForm.action, {
+                    method: 'POST',
+                    body: new FormData(backupRunForm),
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin'
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload.message || 'Não foi possível iniciar o backup.');
+                }
+
+                const statusUrl = backupRunForm.dataset.statusUrl;
+                const afterId = payload.after_id || 0;
+                const startedAt = Date.now();
+                const timer = window.setInterval(async function () {
+                    try {
+                        const status = await pollBackupStatus(statusUrl, afterId);
+                        if (status.state === 'running') {
+                            if (backupNotificationText) {
+                                backupNotificationText.textContent = 'Backup em execução...';
+                            }
+                            if (Date.now() - startedAt > 10 * 60 * 1000) {
+                                throw new Error('O backup ainda está em execução. Atualize a página em alguns instantes.');
+                            }
+                            return;
+                        }
+
+                        window.clearInterval(timer);
+                        if (status.state === 'success') {
+                            finishBackupNotification(`Backup ${status.tipo || ''} concluído com sucesso.`, 'success');
+                            window.setTimeout(function () {
+                                window.location.reload();
+                            }, 900);
+                        } else {
+                            finishBackupNotification(status.message || 'Backup falhou.', 'danger');
+                            if (submitButton) {
+                                submitButton.disabled = false;
+                            }
+                        }
+                    } catch (error) {
+                        window.clearInterval(timer);
+                        finishBackupNotification(error.message || 'Não foi possível acompanhar o backup.', 'danger');
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                    }
+                }, 1200);
+            } catch (error) {
+                finishBackupNotification(error.message || 'Não foi possível iniciar o backup.', 'danger');
+                if (submitButton) {
+                    submitButton.disabled = false;
+                }
+            }
+        });
+    }
+
+    const restoreModal = document.querySelector('[data-backup-restore-modal]');
+    if (restoreModal) {
+        const restoreForm = restoreModal.querySelector('[data-backup-restore-form]');
+        const restoreDate = restoreModal.querySelector('[data-backup-restore-date]');
+        const restoreFile = restoreModal.querySelector('[data-backup-restore-file]');
+        const restorePassword = restoreModal.querySelector('input[name="senha_admin"]');
+        const closeRestoreModal = function () {
+            restoreModal.hidden = true;
+            if (restorePassword) {
+                restorePassword.value = '';
+            }
+        };
+
+        document.querySelectorAll('[data-backup-restore-open]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                restoreForm.action = button.dataset.restoreAction || '';
+                restoreDate.textContent = button.dataset.restoreDate || 'data não identificada';
+                restoreFile.textContent = button.dataset.restoreFile || 'arquivo não identificado';
+                restoreModal.hidden = false;
+                if (restorePassword) {
+                    restorePassword.focus();
+                }
+            });
+        });
+
+        restoreModal.querySelectorAll('[data-backup-restore-close]').forEach(function (button) {
+            button.addEventListener('click', closeRestoreModal);
+        });
+
+        restoreModal.addEventListener('click', function (event) {
+            if (event.target === restoreModal) {
+                closeRestoreModal();
+            }
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !restoreModal.hidden) {
+                closeRestoreModal();
+            }
+        });
+    }
+
 });

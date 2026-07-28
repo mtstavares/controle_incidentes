@@ -30,8 +30,12 @@ mkdir -p "$INSTANCE_DIR" "$LOG_DIR"
 if [ ! -f .env ]; then
   if command -v openssl >/dev/null 2>&1; then
     SECRET_KEY="$(openssl rand -hex 32)"
+    BACKUP_HMAC_KEY="$(openssl rand -hex 48)"
+    BACKUP_ENCRYPTION_KEY="$(openssl rand -hex 32)"
   else
     SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+    BACKUP_HMAC_KEY="$(python -c 'import secrets; print(secrets.token_hex(48))')"
+    BACKUP_ENCRYPTION_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
   fi
 
   cat > .env <<EOF
@@ -45,13 +49,42 @@ PM_API_VERIFY_TLS=0
 NETBOX_API_BASE_URL=
 NETBOX_API_TOKEN=
 NETBOX_API_VERIFY_TLS=0
+DIVCIBER_BACKUP_DEFAULT_DIR=/app/instance/backups
+DIVCIBER_BACKUP_INTERVAL_HOURS=6
+DIVCIBER_BACKUP_RETENTION_DAYS=30
+DIVCIBER_BACKUP_MIN_FULL=4
+DIVCIBER_BACKUP_HMAC_KEY=${BACKUP_HMAC_KEY}
+DIVCIBER_BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
 EOF
   chmod 600 .env
   echo "Arquivo .env criado com SECRET_KEY gerada automaticamente."
 fi
 
+ensure_env_var() {
+  local name="$1"
+  local value="$2"
+  if ! grep -q "^${name}=" .env; then
+    printf '%s=%s\n' "$name" "$value" >> .env
+  fi
+}
+
+if command -v openssl >/dev/null 2>&1; then
+  ensure_env_var "DIVCIBER_BACKUP_HMAC_KEY" "$(openssl rand -hex 48)"
+  ensure_env_var "DIVCIBER_BACKUP_ENCRYPTION_KEY" "$(openssl rand -hex 32)"
+else
+  ensure_env_var "DIVCIBER_BACKUP_HMAC_KEY" "$(python -c 'import secrets; print(secrets.token_hex(48))')"
+  ensure_env_var "DIVCIBER_BACKUP_ENCRYPTION_KEY" "$(python -c 'import secrets; print(secrets.token_hex(32))')"
+fi
+ensure_env_var "DIVCIBER_BACKUP_DEFAULT_DIR" "/app/instance/backups"
+ensure_env_var "DIVCIBER_BACKUP_INTERVAL_HOURS" "6"
+ensure_env_var "DIVCIBER_BACKUP_RETENTION_DAYS" "30"
+ensure_env_var "DIVCIBER_BACKUP_MIN_FULL" "4"
+
 echo "Construindo imagem Docker..."
 docker compose build
+
+echo "Aplicando migrations..."
+docker compose run --rm divciber flask db upgrade
 
 echo "Subindo container..."
 docker compose up -d
