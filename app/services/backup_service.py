@@ -112,6 +112,10 @@ def _legacy_instance_backup_dir():
     return str((_instance_root() / "backups").resolve())
 
 
+def _legacy_local_backup_dir():
+    return str((Path(current_app.root_path).resolve().parent.parent / "backup DivCiber").resolve())
+
+
 def _next_run_from(now_value, interval_hours):
     return now_value + timedelta(hours=interval_hours)
 
@@ -179,7 +183,7 @@ def _ensure_layout(root):
 def get_or_create_config():
     config = BackupConfig.query.order_by(BackupConfig.id.asc()).first()
     if config:
-        if config.diretorio == _legacy_instance_backup_dir():
+        if config.diretorio in {_legacy_instance_backup_dir(), _legacy_local_backup_dir()}:
             config.diretorio = _default_backup_dir()
             config.updated_at = utc_now()
             db.session.commit()
