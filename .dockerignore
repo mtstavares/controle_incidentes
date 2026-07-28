@@ -15,6 +15,10 @@ __pycache__/
 instance/
 logs/
 uploads/
+backups/
+backup/
+backup DivCiber/
+tests/
 static/uploads/
 migration_report*.json
 server.out.log

@@ -30,6 +30,11 @@ class AuditAction:
     USER_DELETED = "USER_DELETED"
     USER_DELETE_DENIED = "USER_DELETE_DENIED"
     IMPORTAR_CREDENCIAIS = "IMPORTAR_CREDENCIAIS"
+    BACKUP_MANUAL = "BACKUP_MANUAL"
+    BACKUP_AUTOMATICO = "BACKUP_AUTOMATICO"
+    VALIDAR_BACKUP = "VALIDAR_BACKUP"
+    RESTAURACAO_SOLICITADA = "RESTAURACAO_SOLICITADA"
+    RESTAURACAO_CONCLUIDA = "RESTAURACAO_CONCLUIDA"
 
 
 AUDITABLE_FIELDS = {
@@ -133,6 +138,30 @@ AUDITABLE_FIELDS = {
         "query_masked",
         "elapsed_ms",
         "result_count",
+    },
+    "BackupConfig": {
+        "diretorio",
+        "intervalo_horas",
+        "habilitado",
+        "retencao_dias",
+        "min_backups_completos",
+        "ultima_execucao",
+        "proxima_execucao",
+        "ultimo_resultado",
+        "updated_by_id",
+    },
+    "BackupRegistro": {
+        "backup_uid",
+        "tipo",
+        "status",
+        "base_backup_uid",
+        "backup_anterior_uid",
+        "tamanho_bytes",
+        "conteudos",
+        "criado_por",
+        "usuario_id",
+        "duracao_ms",
+        "integridade_status",
     },
 }
 

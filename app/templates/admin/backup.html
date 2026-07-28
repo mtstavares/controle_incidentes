@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% from 'components/macros.html' import page_header, empty_state %}
+
+{% block content %}
+{{ page_header('Backup', 'Gerenciamento administrativo dos backups transacionais do DivCiber.') }}
+
+{% set config = status.config %}
+
+{% if not status.security_ready %}
+<div class="alert alert-warning" role="alert">
+    Configure <strong>DIVCIBER_BACKUP_HMAC_KEY</strong> e <strong>DIVCIBER_BACKUP_ENCRYPTION_KEY</strong> no ambiente antes de executar backups ou restaurações.
+</div>
+{% endif %}
+
+{% if status.directory_error %}
+<div class="alert alert-danger" role="alert">{{ status.directory_error }}</div>
+{% endif %}
+
+<section class="backup-status-grid mb-4" aria-label="Status do backup">
+    <article class="app-card backup-status-card">
+        <div class="app-card__body">
+            <span class="metric-label">Serviço</span>
+            <strong>{{ 'Ativo' if config.habilitado else 'Inativo' }}</strong>
+            <small>{{ 'Execução em andamento' if status.running else 'Sem execução em andamento' }}</small>
+        </div>
+    </article>
+    <article class="app-card backup-status-card">
+        <div class="app-card__body">
+            <span class="metric-label">Intervalo em horas</span>
+            <strong>{{ config.intervalo_horas }}h</strong>
+            <small>Próxima: {{ config.proxima_execucao|sp_datetime if config.proxima_execucao else 'Não agendada' }}</small>
+        </div>
+    </article>
+    <article class="app-card backup-status-card">
+        <div class="app-card__body">
+            <span class="metric-label">Última execução</span>
+            <strong>{{ config.ultimo_resultado or 'Sem execução' }}</strong>
+            <small>{{ config.ultima_execucao|sp_datetime if config.ultima_execucao else 'Ainda não executado' }}</small>
+        </div>
+    </article>
+    <article class="app-card backup-status-card">
+        <div class="app-card__body">
+            <span class="metric-label">Armazenamento</span>
+            <strong>{{ human_size(status.total_size) }}</strong>
+            <small>{{ status.total_backups }} backups | Livre: {{ human_size(status.free_bytes) if status.free_bytes is not none else 'Indisponível' }}</small>
+        </div>
+    </article>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="backup-settings-title">
+    <div class="app-card__header">
+        <h2 id="backup-settings-title" class="h5 mb-0">Configurações</h2>
+    </div>
+    <div class="app-card__body">
+        <form method="POST" action="{{ url_for('admin.backup_config_update') }}" class="filter-grid">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <div class="span-8">
+                <label class="form-label" for="diretorio">Diretório de armazenamento</label>
+                <div class="input-group">
+                    <input class="form-control" id="diretorio" name="diretorio" value="{{ config.diretorio }}" required>
+                    <button
+                        class="btn btn-outline-secondary"
+                        type="submit"
+                        formaction="{{ url_for('admin.backup_test_directory') }}"
+                        formmethod="POST"
+                    >
+                        Testar
+                    </button>
+                </div>
+            </div>
+            <div class="span-2">
+                <label class="form-label" for="intervalo_horas">Intervalo em horas</label>
+                <input class="form-control" id="intervalo_horas" name="intervalo_horas" type="number" min="1" max="168" step="1" value="{{ config.intervalo_horas }}" required>
+            </div>
+            <div class="span-2">
+                <label class="form-label" for="habilitado">Serviço</label>
+                <select class="form-select" id="habilitado" name="habilitado">
+                    <option value="1" {% if config.habilitado %}selected{% endif %}>Ativo</option>
+                    <option value="0" {% if not config.habilitado %}selected{% endif %}>Inativo</option>
+                </select>
+            </div>
+            <div class="span-6">
+                <button class="btn btn-primary" type="submit">Salvar configurações</button>
+            </div>
+
+        </form>
+    </div>
+</section>
+
+<section class="app-card mb-4" aria-labelledby="backup-actions-title">
+    <div class="app-card__header">
+        <h2 id="backup-actions-title" class="h5 mb-0">Backup manual</h2>
+    </div>
+    <div class="app-card__body d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-center">
+        <div>
+            <p class="mb-1">O backup manual é executado em segundo plano e aparece na lista após a conclusão.</p>
+            <p class="text-muted small mb-0">Backups incompletos ou inválidos não ficam disponíveis para restauração.</p>
+        </div>
+        <form
+            method="POST"
+            action="{{ url_for('admin.backup_run_now') }}"
+            style="margin-right: 3rem"
+            data-backup-run-form
+            data-status-url="{{ url_for('admin.backup_manual_status') }}"
+        >
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-primary" type="submit" {% if status.running or not status.security_ready %}disabled{% endif %}>Executar backup agora</button>
+        </form>
+    </div>
+</section>
+
+<section class="app-card" aria-labelledby="backup-list-title">
+    <div class="app-card__header flex-wrap gap-3">
+        <h2 id="backup-list-title" class="h5 mb-0">Backups existentes</h2>
+        <form class="backup-filter-form" method="GET" action="{{ url_for('admin.backup_admin') }}">
+            <select class="form-select form-select-sm" name="tipo" aria-label="Filtrar tipo">
+                <option value="">Todos os tipos</option>
+                <option value="COMPLETO" {% if filters.tipo == 'COMPLETO' %}selected{% endif %}>Completo</option>
+                <option value="INCREMENTAL" {% if filters.tipo == 'INCREMENTAL' %}selected{% endif %}>Incremental</option>
+            </select>
+            <select class="form-select form-select-sm" name="status" aria-label="Filtrar status">
+                <option value="">Todos os status</option>
+                {% for option in ['CONCLUIDO', 'FALHA', 'INVALIDO', 'QUARENTENA', 'EXCLUIDO'] %}
+                    <option value="{{ option }}" {% if filters.status == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Filtrar</button>
+        </form>
+    </div>
+    <div class="app-card__body">
+        {% if backups %}
+        <div class="app-table-wrap">
+            <table class="table app-table backup-table">
+                <thead>
+                    <tr>
+                        <th>Arquivo</th>
+                        <th>Tipo</th>
+                        <th>Data</th>
+                        <th>Tamanho</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for backup in backups %}
+                    <tr>
+                        <td>
+                            <strong>{{ backup.arquivo_nome }}</strong>
+                            <span class="d-block text-muted small">{{ backup.backup_uid }}</span>
+                        </td>
+                        <td>{{ backup.tipo }}</td>
+                        <td>{{ backup.iniciado_em|sp_datetime }}</td>
+                        <td>{{ human_size(backup.tamanho_bytes) }}</td>
+                        <td>
+                            <span class="d-block">{{ backup.status }}</span>
+                            <span class="text-muted small">{{ backup.integridade_status }}</span>
+                        </td>
+                        <td>
+                            <div class="backup-actions">
+                                <form method="POST" action="{{ url_for('admin.backup_validate', backup_id=backup.id) }}">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                    <button class="btn btn-outline-secondary btn-sm" type="submit">Validar</button>
+                                </form>
+                                {% if backup.status == 'CONCLUIDO' and backup.integridade_status == 'VALIDO' %}
+                                <button
+                                    class="btn btn-outline-danger btn-sm"
+                                    type="button"
+                                    data-backup-restore-open
+                                    data-restore-action="{{ url_for('admin.backup_restore', backup_id=backup.id) }}"
+                                    data-restore-file="{{ backup.arquivo_nome }}"
+                                    data-restore-date="{{ backup.iniciado_em|sp_datetime }}"
+                                >
+                                    Restaurar
+                                </button>
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('admin.backup_delete', backup_id=backup.id) }}" onsubmit="return confirm('Excluir este backup?');">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                    <button class="btn btn-outline-secondary btn-sm" type="submit">Excluir</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if pagination.pages > 1 %}
+        <nav class="mt-4" aria-label="Paginação de backups">
+            <ul class="pagination flex-wrap">
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.backup_admin', page=pagination.prev_num, tipo=filters.tipo, status=filters.status) }}">Anterior</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages }}</span></li>
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.backup_admin', page=pagination.next_num, tipo=filters.tipo, status=filters.status) }}">Próxima</a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+            {{ empty_state('Nenhum backup encontrado', 'Execute um backup manual ou aguarde a próxima execução automática.') }}
+        {% endif %}
+    </div>
+</section>
+
+<section class="backup-restore-modal" data-backup-restore-modal hidden aria-label="Confirmação de restauração">
+    <div class="backup-restore-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="backup-restore-title">
+        <div class="backup-restore-modal__header">
+            <div>
+                <p class="eyebrow mb-1">Operação crítica</p>
+                <h2 id="backup-restore-title" class="h5 mb-0">Restaurar sistema</h2>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-backup-restore-close>Fechar</button>
+        </div>
+        <div class="backup-restore-modal__body">
+            <p>
+                Você está prestes a restaurar o sistema para o estado do backup de
+                <strong data-backup-restore-date></strong>.
+            </p>
+            <p class="text-muted small mb-0">
+                Arquivo selecionado: <span data-backup-restore-file></span>. A aplicação fará um backup de segurança antes da restauração.
+            </p>
+        </div>
+        <form class="backup-restore-modal__form" method="POST" data-backup-restore-form>
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="confirmacao" value="RESTAURAR">
+            <label class="form-label" for="backupRestorePassword">Senha Admin</label>
+            <input class="form-control" id="backupRestorePassword" type="password" name="senha_admin" autocomplete="current-password" required>
+            <div class="backup-restore-modal__actions">
+                <button class="btn btn-outline-secondary" type="button" data-backup-restore-close>Cancelar</button>
+                <button class="btn btn-danger" type="submit">Confirmar restauração</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

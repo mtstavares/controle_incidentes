@@ -281,6 +281,57 @@ class ConscientizacaoCampanha(TimestampMixin, db.Model):
         return f"<ConscientizacaoCampanha {self.id} - {self.titulo}>"
 
 
+class BackupConfig(TimestampMixin, db.Model):
+    __tablename__ = "backup_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    diretorio = db.Column(db.String(500), nullable=False)
+    intervalo_horas = db.Column(db.Integer, nullable=False, default=6)
+    habilitado = db.Column(db.Boolean, nullable=False, default=True)
+    retencao_dias = db.Column(db.Integer, nullable=False, default=30)
+    min_backups_completos = db.Column(db.Integer, nullable=False, default=4)
+    ultima_execucao = db.Column(db.DateTime(timezone=True), nullable=True)
+    proxima_execucao = db.Column(db.DateTime(timezone=True), nullable=True)
+    ultimo_resultado = db.Column(db.String(30), nullable=True)
+    formato_versao = db.Column(db.String(20), nullable=False, default="1")
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+
+    updated_by = db.relationship("User", backref="backup_configs_alteradas")
+
+    def __repr__(self):
+        return f"<BackupConfig {self.diretorio}>"
+
+
+class BackupRegistro(TimestampMixin, db.Model):
+    __tablename__ = "backup_registros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    backup_uid = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    tipo = db.Column(db.String(20), nullable=False, index=True)
+    status = db.Column(db.String(30), nullable=False, default="EM_ANDAMENTO", index=True)
+    arquivo_nome = db.Column(db.String(255), nullable=False)
+    arquivo_caminho = db.Column(db.String(700), nullable=False)
+    manifesto_caminho = db.Column(db.String(700), nullable=True)
+    base_backup_uid = db.Column(db.String(64), nullable=True, index=True)
+    backup_anterior_uid = db.Column(db.String(64), nullable=True, index=True)
+    pacote_sha256 = db.Column(db.String(64), nullable=True)
+    tamanho_bytes = db.Column(db.BigInteger, nullable=False, default=0)
+    conteudos = db.Column(db.Text, nullable=True)
+    criado_por = db.Column(db.String(20), nullable=False, default="automatico")
+    usuario_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    iniciado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    concluido_em = db.Column(db.DateTime(timezone=True), nullable=True)
+    duracao_ms = db.Column(db.Integer, nullable=True)
+    erro_sanitizado = db.Column(db.String(500), nullable=True)
+    integridade_status = db.Column(db.String(30), nullable=False, default="NAO_VALIDADO")
+    app_commit = db.Column(db.String(80), nullable=True)
+
+    usuario = db.relationship("User", backref="backups_solicitados")
+
+    def __repr__(self):
+        return f"<BackupRegistro {self.backup_uid} {self.tipo} {self.status}>"
+
+
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
 
