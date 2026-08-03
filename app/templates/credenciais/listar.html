@@ -62,20 +62,20 @@
                     {% endfor %}
                 </ul>
             {% endif %}
-            {% if import_preview.can_confirm %}
-                <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
                     <form method="POST" action="{{ url_for('credenciais.cancelar_importacao_mensal') }}">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="preview_token" value="{{ import_preview.token }}">
                         <button class="btn btn-outline-secondary w-100" type="submit">Cancelar</button>
                     </form>
+                    {% if import_preview.can_confirm %}
                     <form method="POST" action="{{ url_for('credenciais.confirmar_importacao_mensal') }}">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="preview_token" value="{{ import_preview.token }}">
                         <button class="btn btn-success w-100" type="submit">Confirmar importação</button>
                     </form>
+                    {% endif %}
                 </div>
-            {% endif %}
         {% endif %}
     </div>
 </section>
