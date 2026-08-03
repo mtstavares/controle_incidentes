@@ -47,7 +47,7 @@ class Config:
     NETBOX_API_CA_BUNDLE = os.getenv("NETBOX_API_CA_BUNDLE")
     DIVCIBER_BACKUP_DEFAULT_DIR = os.getenv(
         "DIVCIBER_BACKUP_DEFAULT_DIR",
-        os.path.abspath(os.path.join(BASE_DIR, "..", "backup DivCiber")),
+        os.path.abspath(os.path.join(BASE_DIR, "..", "backups")),
     )
     DIVCIBER_BACKUP_INTERVAL_HOURS = int(os.getenv("DIVCIBER_BACKUP_INTERVAL_HOURS", "6"))
     DIVCIBER_BACKUP_RETENTION_DAYS = int(os.getenv("DIVCIBER_BACKUP_RETENTION_DAYS", "30"))
