@@ -22,6 +22,7 @@ from app.services.netbox_service import (
     mask_ip,
     normalize_ip,
 )
+from app.services.ipinfo_service import IPInfoError, consultar_ip_publico
 
 
 VIEWER_BLOCK_MESSAGE = (
@@ -169,10 +170,39 @@ def buscar_ip():
             return render_template("utilitarios/buscar_ip.html", title="Buscar IP", result=None, query=query_value), 403
 
         try:
-            result = consultar_ip(normalized_ip)
+            private_result = None
+            public_result = None
+            private_error = None
+            public_error = None
+            try:
+                private_result = consultar_ip(normalized_ip)
+            except NetBoxError as exc:
+                private_error = exc.message
+
+            try:
+                public_result = consultar_ip_publico(normalized_ip)
+            except IPInfoError as exc:
+                public_error = exc.message
+
+            if private_error and public_error:
+                raise NetBoxError()
+
+            prefixes = private_result.get("prefixes", []) if private_result else []
+            public_found = bool(public_result and public_result.get("found"))
+            result = {
+                "query_ip": normalized_ip,
+                "prefixes": prefixes,
+                "private_error": private_error,
+                "public_ip": public_result,
+                "public_error": public_error,
+                "total_results": len(prefixes) + (1 if public_found else 0),
+            }
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_netbox_search(normalized_ip, "SUCESSO", elapsed_ms, result.get("total_results"))
-            flash("Consulta realizada com sucesso.", "success")
+            if private_error or public_error:
+                flash("Consulta realizada parcialmente.", "warning")
+            else:
+                flash("Consulta realizada com sucesso.", "success")
         except NetBoxError as exc:
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_netbox_search(normalized_ip, exc.audit_result, elapsed_ms)
