@@ -1186,15 +1186,10 @@ def delete_attachment(incident_id, attachment_id):
 
 # app/blueprints/incidente/routes.py
 
-def _current_month_range():
+def _current_year_range():
     today = _today_local_date()
-    start = today.replace(day=1)
-    if start.month == 12:
-        next_month = start.replace(year=start.year + 1, month=1)
-    else:
-        next_month = start.replace(month=start.month + 1)
-    end = next_month - timedelta(days=1)
-    return start, end, next_month
+    start = today.replace(month=1, day=1)
+    return start, today
 
 
 def _parse_dashboard_date(value, field_name):
@@ -1223,7 +1218,7 @@ def _dashboard_filter_options():
 
 
 def _dashboard_filters_from_request():
-    default_start, default_end, default_next_month = _current_month_range()
+    default_start, default_end = _current_year_range()
     view = request.args.get("view", "status").strip()
     if view not in {"status", "cpa-btl"}:
         abort(400, description="Visualização inválida.")
@@ -1234,8 +1229,6 @@ def _dashboard_filters_from_request():
         abort(400, description="Período inválido.")
 
     end_exclusive = end_date + timedelta(days=1)
-    if (end_exclusive - start_date).days > 370:
-        abort(400, description="Período máximo de consulta excedido.")
 
     incident_type = (request.args.get("incidentType") or request.args.get("incident_type") or "todos").strip()
     status_filter = (request.args.get("status") or request.args.get("statusId") or "todos").strip()
