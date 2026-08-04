@@ -8,7 +8,6 @@ from flask import current_app
 SERVICE_PM_CDPM = "pm_cdpm"
 SERVICE_PM_EMAIL = "pm_email"
 SERVICE_NETBOX = "netbox"
-SERVICE_IPINFO = "ipinfo"
 
 PM_ENDPOINTS = {
     "dados_por_cpf": "cpf/{cpf}/dadosResumidos",
@@ -28,11 +27,6 @@ NETBOX_ENDPOINTS = {
     "prefixes": "ipam/prefixes/",
 }
 
-IPINFO_ENDPOINTS = {
-    "lookup": "lookup/{ip}",
-}
-
-
 class InternalAPIConfigurationError(RuntimeError):
     pass
 
@@ -51,8 +45,6 @@ def _base_url(service_name):
         base_url = current_app.config.get("PM_EMAIL_SEARCH_BASE_URL")
     if not base_url and service_name == SERVICE_NETBOX:
         base_url = current_app.config.get("NETBOX_API_BASE_URL")
-    if not base_url and service_name == SERVICE_IPINFO:
-        base_url = current_app.config.get("IPINFO_API_BASE_URL")
     if not base_url:
         raise InternalAPIConfigurationError("Base URL da integração interna não configurada.")
     clean_base_url = re.sub(r"[\x00-\x20]+", "", str(base_url)).strip("'\"<>")
@@ -73,6 +65,13 @@ def _build_url(base_url, path):
     return f"{base_url}/{clean_path}"
 
 
+def _clean_token(value):
+    if value is None:
+        return None
+    token = str(value).strip().strip("'\"")
+    return token or None
+
+
 def _timeout(service_name):
     timeouts = current_app.config.get("INTERNAL_API_TIMEOUTS") or {}
     if service_name == SERVICE_PM_CDPM and service_name not in timeouts:
@@ -81,8 +80,6 @@ def _timeout(service_name):
         return float(current_app.config.get("PM_API_TIMEOUT", 10))
     if service_name == SERVICE_NETBOX and service_name not in timeouts:
         return float(current_app.config.get("NETBOX_API_TIMEOUT", 10))
-    if service_name == SERVICE_IPINFO and service_name not in timeouts:
-        return float(current_app.config.get("IPINFO_API_TIMEOUT", 10))
     return float(timeouts.get(service_name, 10))
 
 
@@ -99,9 +96,6 @@ def _verify_tls(service_name):
     if service_name == SERVICE_NETBOX and service_name not in verify_tls:
         if current_app.config.get("NETBOX_API_VERIFY_TLS") is False:
             return False
-    if service_name == SERVICE_IPINFO and service_name not in verify_tls:
-        if current_app.config.get("IPINFO_API_VERIFY_TLS") is False:
-            return False
 
     ca_bundles = current_app.config.get("INTERNAL_API_CA_BUNDLES") or {}
     if service_name == SERVICE_PM_CDPM and service_name not in ca_bundles:
@@ -110,8 +104,6 @@ def _verify_tls(service_name):
         return current_app.config.get("PM_API_CA_BUNDLE") or True
     if service_name == SERVICE_NETBOX and service_name not in ca_bundles:
         return current_app.config.get("NETBOX_API_CA_BUNDLE") or True
-    if service_name == SERVICE_IPINFO and service_name not in ca_bundles:
-        return current_app.config.get("IPINFO_API_CA_BUNDLE") or True
     return ca_bundles.get(service_name) or True
 
 
@@ -129,10 +121,8 @@ class InternalAPIClient:
     def _token(self):
         tokens = current_app.config.get("INTERNAL_API_TOKENS") or {}
         if self.service_name == SERVICE_NETBOX and self.service_name not in tokens:
-            return current_app.config.get("NETBOX_API_TOKEN")
-        if self.service_name == SERVICE_IPINFO and self.service_name not in tokens:
-            return current_app.config.get("IPINFO_API_TOKEN")
-        return tokens.get(self.service_name)
+            return _clean_token(current_app.config.get("NETBOX_API_TOKEN"))
+        return _clean_token(tokens.get(self.service_name))
 
     def __enter__(self):
         return self
