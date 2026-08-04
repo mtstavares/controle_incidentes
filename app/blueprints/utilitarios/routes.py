@@ -29,7 +29,7 @@ VIEWER_BLOCK_MESSAGE = (
     "é permitida apenas para usuários Admin e User."
 )
 VIEWER_BLOCK_IP_MESSAGE = (
-    "Seu perfil possui apenas permissão de visualização. A consulta de IPs no NetBox "
+    "Seu perfil possui apenas permissão de visualização. A consulta de IPs privados no NetBox "
     "é permitida apenas para usuários Admin e User."
 )
 
@@ -169,7 +169,15 @@ def buscar_ip():
             return render_template("utilitarios/buscar_ip.html", title="Buscar IP", result=None, query=query_value), 403
 
         try:
-            result = consultar_ip(normalized_ip)
+            private_result = consultar_ip(normalized_ip)
+            ip_addresses = private_result.get("ip_addresses", [])
+            prefixes = private_result.get("prefixes", [])
+            result = {
+                "query_ip": normalized_ip,
+                "ip_addresses": ip_addresses,
+                "prefixes": prefixes,
+                "total_results": len(ip_addresses) + len(prefixes),
+            }
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_netbox_search(normalized_ip, "SUCESSO", elapsed_ms, result.get("total_results"))
             flash("Consulta realizada com sucesso.", "success")

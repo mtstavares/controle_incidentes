@@ -60,3 +60,4 @@ tests/
 *.xls
 *.csv
 *.png
+!app/static/img/div_ciber_new.png

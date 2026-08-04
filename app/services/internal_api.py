@@ -27,7 +27,6 @@ NETBOX_ENDPOINTS = {
     "prefixes": "ipam/prefixes/",
 }
 
-
 class InternalAPIConfigurationError(RuntimeError):
     pass
 
@@ -64,6 +63,13 @@ def _build_url(base_url, path):
     if base_url.lower().endswith(f"/{clean_path.lower()}"):
         return base_url
     return f"{base_url}/{clean_path}"
+
+
+def _clean_token(value):
+    if value is None:
+        return None
+    token = str(value).strip().strip("'\"")
+    return token or None
 
 
 def _timeout(service_name):
@@ -115,8 +121,8 @@ class InternalAPIClient:
     def _token(self):
         tokens = current_app.config.get("INTERNAL_API_TOKENS") or {}
         if self.service_name == SERVICE_NETBOX and self.service_name not in tokens:
-            return current_app.config.get("NETBOX_API_TOKEN")
-        return tokens.get(self.service_name)
+            return _clean_token(current_app.config.get("NETBOX_API_TOKEN"))
+        return _clean_token(tokens.get(self.service_name))
 
     def __enter__(self):
         return self
@@ -128,7 +134,7 @@ class InternalAPIClient:
     def get_json(self, path, params=None):
         url = _build_url(self.base_url, path)
         headers = {"Accept": "application/json"}
-        if self.token:
+        if self.token and self.service_name == SERVICE_NETBOX:
             headers["Authorization"] = f"Token {self.token}"
         response = self.session.get(
             url,

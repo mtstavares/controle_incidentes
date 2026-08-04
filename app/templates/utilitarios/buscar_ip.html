@@ -32,7 +32,7 @@
             {% endif %}
         </div>
         <div class="filter-actions">
-            <button class="btn btn-primary" type="submit" {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar</button>
+            <button class="btn btn-primary" style="margin-top: 1rem;" type="submit" {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar</button>
         </div>
     </form>
 
@@ -50,9 +50,9 @@
             </div>
         {% else %}
             <div class="netbox-result-grid">
-                <article class="netbox-card">
-                    <h2>Endereços IP</h2>
-                    {% if result.ip_addresses %}
+                {% if result.ip_addresses %}
+                    <article class="netbox-card">
+                        <h2>Endereço IP</h2>
                         <div class="netbox-list">
                             {% for item in result.ip_addresses %}
                                 <div class="netbox-list__item">
@@ -69,14 +69,12 @@
                                 </div>
                             {% endfor %}
                         </div>
-                    {% else %}
-                        <p class="text-muted">Nenhum endereço IP específico encontrado.</p>
-                    {% endif %}
-                </article>
+                    </article>
+                {% endif %}
 
-                <article class="netbox-card">
-                    <h2>Prefixos</h2>
-                    {% if result.prefixes %}
+                {% if result.prefixes %}
+                    <article class="netbox-card">
+                        <h2>Prefixos</h2>
                         <div class="netbox-list">
                             {% for item in result.prefixes %}
                                 <div class="netbox-list__item">
@@ -92,10 +90,8 @@
                                 </div>
                             {% endfor %}
                         </div>
-                    {% else %}
-                        <p class="text-muted">Nenhum prefixo contendo o IP foi encontrado.</p>
-                    {% endif %}
-                </article>
+                    </article>
+                {% endif %}
             </div>
         {% endif %}
     {% endif %}
