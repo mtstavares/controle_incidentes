@@ -217,21 +217,29 @@ document.addEventListener('DOMContentLoaded', function () {
                 : '';
         };
 
+        const unitDedupKey = function (unit) {
+            return `${unit.cpa}::${unit.name.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR')}`;
+        };
+
         const syncIncidentUnits = function (options = {}) {
             const commandId = commandSelect.value;
             const selectedCommand = commandSelect.options[commandSelect.selectedIndex];
             const previousUnitValue = options.clearUnit === false ? btlSelect.value : '';
-            const seenValues = new Set();
+            const unitsByName = new Map();
 
             cpaInput.value = selectedCommand ? selectedCommand.getAttribute('data-command-name') || '' : '';
 
-            const availableUnits = originalUnitOptions.filter(function (unit) {
-                if (!commandId || unit.cpa !== commandId || seenValues.has(unit.value)) {
-                    return false;
+            originalUnitOptions.forEach(function (unit) {
+                if (!commandId || unit.cpa !== commandId) {
+                    return;
                 }
-                seenValues.add(unit.value);
-                return true;
+                const key = unitDedupKey(unit);
+                const current = unitsByName.get(key);
+                if (!current || unit.selected || unit.value === previousUnitValue) {
+                    unitsByName.set(key, unit);
+                }
             });
+            const availableUnits = Array.from(unitsByName.values());
 
             btlSelect.replaceChildren(buildPlaceholder(
                 commandId
