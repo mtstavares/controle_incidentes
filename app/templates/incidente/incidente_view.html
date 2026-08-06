@@ -15,6 +15,8 @@
     <div class="incident-detail-actions__end">
         {% if current_user.profile in ['Admin', 'User'] %}
             <a href="{{ url_for('incidente.edit_incident', incident_id=incidente.id) }}" class="btn btn-primary">Editar incidente</a>
+        {% endif %}
+        {% if current_user.profile == 'Admin' %}
             <form method="POST" action="{{ url_for('incidente.delete_incident', incident_id=incidente.id) }}" data-prevent-duplicate>
                 <button type="submit" class="btn btn-outline-danger" data-loading-text="Excluindo..." onclick="return confirm('Tem certeza que deseja excluir este incidente?');">Excluir</button>
             </form>
