@@ -133,16 +133,16 @@ def _is_safe_internal_path(path):
     return not parsed.scheme and not parsed.netloc and path.startswith("/") and not path.startswith("//")
 
 
-def _ensure_incident_owner_or_admin(incident, action):
-    """Prevents BOLA/IDOR: users can mutate only their own incidents."""
-    if current_user.profile == "Admin" or incident.user_id == current_user.id:
+def _ensure_incident_delete_admin(incident):
+    """Only admins can delete incidents."""
+    if current_user.profile == "Admin":
         return
     registrar_auditoria(
         acao=AuditAction.ACESSO_NEGADO,
         modulo="Incidentes de segurança",
         entidade="Incidente",
         entidade_id=incident.id,
-        descricao=f"Tentativa negada de {action} incidente de outro usuário.",
+        descricao="Tentativa negada de excluir incidente sem perfil Admin.",
         resultado="NEGADO",
     )
     abort(403)
@@ -738,7 +738,6 @@ def edit_incident(incident_id): # Rota para editar um incidente
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
     incident = Incidente.query.get_or_404(incident_id)
-    _ensure_incident_owner_or_admin(incident, "editar")
     data_atual = _today_local_date()
     unidades = Unidades.query.all()
     commands, organizational_units = _organizational_form_options()
@@ -963,11 +962,11 @@ def edit_incident(incident_id): # Rota para editar um incidente
 @incidente_bp.route("/incidente/delete/<int:incident_id>", methods=['POST'])
 @login_required
 def delete_incident(incident_id):
-    if not allowed_edit_profile(current_user):
+    if getattr(current_user, "profile", None) != "Admin":
         abort(403)
 
     incident = Incidente.query.get_or_404(incident_id)
-    _ensure_incident_owner_or_admin(incident, "excluir")
+    _ensure_incident_delete_admin(incident)
     report_number = incident.report_number
 
     try:
