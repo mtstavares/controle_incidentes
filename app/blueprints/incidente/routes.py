@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import unicodedata
 import plotly.express as px
 from werkzeug.exceptions import HTTPException
-from app.blueprints.users.routes import allowed_edit_profile
+from app.services.permissions import can_current_user, require_permission
 from app.services.audit_service import AuditAction, montar_alteracoes, registrar_auditoria
 from app.services.attachment_service import (
     AttachmentValidationError,
@@ -133,20 +133,14 @@ def _is_safe_internal_path(path):
     return not parsed.scheme and not parsed.netloc and path.startswith("/") and not path.startswith("//")
 
 
-def _ensure_incident_delete_admin(incident):
-    """Only admins can delete incidents."""
-    if current_user.profile == "Admin":
-        return
-    registrar_auditoria(
-        acao=AuditAction.ACESSO_NEGADO,
-        modulo="Incidentes de segurança",
+def _ensure_incident_delete_allowed(incident):
+    require_permission(
+        "incident.delete",
+        modulo="Incidentes de seguran??a",
         entidade="Incidente",
         entidade_id=incident.id,
         descricao="Tentativa negada de excluir incidente sem perfil Admin.",
-        resultado="NEGADO",
     )
-    abort(403)
-
 
 def _today_local_date():
     return local_now().date()
@@ -528,7 +522,7 @@ def search_incidents():
 
 @login_required
 def new_incident():
-    if allowed_edit_profile(current_user): # função para verificar permissão do usuário para edição
+    if can_current_user("incident.create"):
         data_atual = _today_local_date()
         unidades = Unidades.query.all()
         commands, organizational_units = _organizational_form_options()
@@ -732,7 +726,7 @@ def new_incident():
 @incidente_bp.route("/incidente/<int:incident_id>/edit", methods=['GET', 'POST'])
 @login_required
 def edit_incident(incident_id): # Rota para editar um incidente
-    if not allowed_edit_profile(current_user):
+    if not can_current_user("incident.edit"):
         current_app.logger.info(f"Usuario {current_user.id} tentou editar o incidente {incident_id}. Sem permissão. {current_user.profile}")
         flash('Acesso negado: Você não tem permissão para editar este incidente.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
@@ -962,11 +956,8 @@ def edit_incident(incident_id): # Rota para editar um incidente
 @incidente_bp.route("/incidente/delete/<int:incident_id>", methods=['POST'])
 @login_required
 def delete_incident(incident_id):
-    if getattr(current_user, "profile", None) != "Admin":
-        abort(403)
-
     incident = Incidente.query.get_or_404(incident_id)
-    _ensure_incident_delete_admin(incident)
+    _ensure_incident_delete_allowed(incident)
     report_number = incident.report_number
 
     try:
@@ -1048,7 +1039,7 @@ def search_incident():
 @incidente_bp.route("/incidente/<int:incident_id>/add_obs", methods=['POST'])
 @login_required
 def add_obs(incident_id):
-    if allowed_edit_profile(current_user):
+    if can_current_user("incident.comment.create"):
         # Rota para adicionar observação ao incidente
         texto_observacao = request.form['texto_observacao']
         user_id = current_user.id # Usuário logado
@@ -1085,7 +1076,7 @@ def add_obs(incident_id):
 def delete_obs(incident_id, obs_id):
     # Rota para excluir observação
     obs = IncidenteObs.query.get_or_404(obs_id)
-    if obs.autor_obs != current_user and current_user.profile != 'Admin':
+    if obs.autor_obs != current_user and not can_current_user("incident.comment.delete.any"):
         flash('Acesso negado: Você não tem permissão para excluir esta observação.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
@@ -1157,7 +1148,7 @@ def download_attachment(incident_id, attachment_id):
 @incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>/delete", methods=['POST'])
 @login_required
 def delete_attachment(incident_id, attachment_id):
-    if not allowed_edit_profile(current_user):
+    if not can_current_user("incident.attachment.delete"):
         abort(403)
     Incidente.query.get_or_404(incident_id)
     attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()

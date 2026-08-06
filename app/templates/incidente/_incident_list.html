@@ -103,6 +103,6 @@
             <button type="button" class="btn btn-outline-secondary" data-clear-incident-search>Limpar pesquisa</button>
         </div>
     {% else %}
-        {{ empty_state('Nenhum incidente encontrado', 'Cadastre um novo incidente ou ajuste os filtros aplicados.', url_for('incidente.new_incident') if current_user.profile in ['Admin', 'User'] else '', 'Registrar incidente' if current_user.profile in ['Admin', 'User'] else '') }}
+        {{ empty_state('Nenhum incidente encontrado', 'Cadastre um novo incidente ou ajuste os filtros aplicados.', url_for('incidente.new_incident') if can_current_user('incident.create') else '', 'Registrar incidente' if can_current_user('incident.create') else '') }}
     {% endif %}
 {% endif %}

@@ -15,6 +15,7 @@ from app.services.buscar_pm_service import (
     normalize_name_query,
     normalize_query,
 )
+from app.services.permissions import can_current_user
 from app.services.netbox_service import (
     NetBoxError,
     NetBoxValidationError,
@@ -40,8 +41,8 @@ def _rate_limit_key():
     return request.remote_addr or "anonimo"
 
 
-def _can_search():
-    return getattr(current_user, "profile", None) in {"Admin", "User"}
+def _can_search(permission):
+    return can_current_user(permission)
 
 
 def _audit_search(query_kind, query_value, result, elapsed_ms):
@@ -111,7 +112,7 @@ def buscar_pm():
                 name_query=name_query,
             ), 400
 
-        if not _can_search():
+        if not _can_search("utility.buscar_pm.search"):
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_search(query.kind, query.value, "NEGADO", elapsed_ms)
             flash(VIEWER_BLOCK_MESSAGE, "warning")
@@ -162,7 +163,7 @@ def buscar_ip():
             flash(exc.message, "danger")
             return render_template("utilitarios/buscar_ip.html", title="Buscar IP", result=None, query=query_value), 400
 
-        if not _can_search():
+        if not _can_search("utility.buscar_ip.search"):
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             _audit_netbox_search(normalized_ip, "NEGADO", elapsed_ms)
             flash(VIEWER_BLOCK_IP_MESSAGE, "warning")

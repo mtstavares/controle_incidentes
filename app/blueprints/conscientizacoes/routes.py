@@ -16,41 +16,32 @@ from app.services.awareness_image_service import (
     save_awareness_image,
 )
 from app.services.timezone_service import local_now, parse_iso_date
+from app.services.permissions import can_current_user, require_permission
 
-
-WRITE_PROFILES = {"Admin", "User"}
-VIEW_PROFILES = {"Admin", "User", "Viewer"}
 TITLE_MAX_LENGTH = 150
 SEARCH_MAX_LENGTH = 80
 
 
-def _current_profile():
-    return getattr(current_user, "profile", None)
-
-
 def _require_view_permission():
-    if _current_profile() not in VIEW_PROFILES:
-        registrar_auditoria(
-            acao=AuditAction.ACESSO_NEGADO,
-            modulo="Conscientizações",
-            entidade="ConscientizacaoCampanha",
-            descricao="Tentativa de acesso sem permissão às conscientizações.",
-            resultado="NEGADO",
-        )
-        abort(403)
+    require_permission(
+        "awareness.view",
+        modulo="Conscientiza????es",
+        entidade="ConscientizacaoCampanha",
+        descricao="Tentativa de acesso sem permiss??o ??s conscientiza????es.",
+    )
 
 
 def _require_write_permission():
-    if _current_profile() not in WRITE_PROFILES:
-        registrar_auditoria(
-            acao=AuditAction.ACESSO_NEGADO,
-            modulo="Conscientizações",
-            entidade="ConscientizacaoCampanha",
-            descricao="Tentativa de alteração de campanha sem permissão.",
-            resultado="NEGADO",
-        )
-        abort(403)
+    require_permission(
+        "awareness.manage",
+        modulo="Conscientiza????es",
+        entidade="ConscientizacaoCampanha",
+        descricao="Tentativa de altera????o de campanha sem permiss??o.",
+    )
 
+
+def _can_manage_campaigns():
+    return can_current_user("awareness.manage")
 
 def _normalize_title(value):
     title = re.sub(r"\s+", " ", (value or "").strip())
@@ -136,7 +127,7 @@ def listar_conscientizacoes():
         "conscientizacoes/listar.html",
         title="Conscientizações",
         campanhas=campanhas,
-        can_manage=_current_profile() in WRITE_PROFILES,
+        can_manage=_can_manage_campaigns(),
         today=local_now().date().isoformat(),
         filtros=request.args,
         error_message=error_message,
@@ -159,7 +150,7 @@ def listar_conscientizacoes_api():
     return render_template(
         "conscientizacoes/_campaign_grid.html",
         campanhas=campanhas,
-        can_manage=_current_profile() in WRITE_PROFILES,
+        can_manage=_can_manage_campaigns(),
         error_message=error_message,
     ), status_code
 
