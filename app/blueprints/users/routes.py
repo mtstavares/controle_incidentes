@@ -154,9 +154,9 @@ def register():
 
 
 @users_bp.route("/login", methods=["GET", "POST"])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per minute", methods=["POST"])
 def login():
-    if request.method == "GET":
+    if request.method != "POST":
         return render_template("users/login.html", title="Login de usuário")
 
     username = normalizar_usuario(request.form.get("username"))

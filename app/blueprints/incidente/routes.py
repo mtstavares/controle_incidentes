@@ -27,7 +27,7 @@ from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_
 MAX_SEARCH_LENGTH = 200
 INCIDENTS_PER_PAGE = 10
 SAO_PAULO_TZ = APP_TIMEZONE
-FINAL_INCIDENT_STATUSES = ("Encerrado", "Falso Positivo")
+FINAL_INCIDENT_STATUSES = ("Encerrado", "Falso positivo", "Falso Positivo")
 
 def _sort_units_query(query):
     return query.order_by(
@@ -1285,11 +1285,11 @@ def _filtered_incident_query(filters):
 
 def _dashboard_cards(query):
     total = query.count()
-    closed = query.filter(Incidente.status_incident == "Encerrado").count()
-    in_progress = query.filter(Incidente.status_incident.in_(_filter_values_with_legacy("Em Análise") + _filter_values_with_legacy("Em Mitigação"))).count()
-    open_count = query.filter(Incidente.status_incident != "Encerrado").count()
+    closed_statuses = _final_status_values()
+    closed = query.filter(Incidente.status_incident.in_(closed_statuses)).count()
+    in_progress = query.filter(Incidente.status_incident.in_(_filter_values_with_legacy("Em An?lise") + _filter_values_with_legacy("Em Mitiga??o"))).count()
+    open_count = query.filter(~Incidente.status_incident.in_(closed_statuses)).count()
     return {"total": total, "open": open_count, "inProgress": in_progress, "closed": closed}
-
 
 def _status_chart_data(query):
     rows = (
