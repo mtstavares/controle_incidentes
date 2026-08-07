@@ -17,8 +17,16 @@
         </div>
     </div>
     <div class="app-card__body">
-        <form class="filter-grid mb-4" method="GET" action="{{ url_for('incidente.incidents_list') }}" data-incident-filter-form>
+        <form class="filter-grid mb-4" method="GET" action="{{ url_for('incidente.incidents_list') }}" data-incident-filter-form data-dashboard-filters>
             <input type="hidden" name="q" value="{{ q|default('') }}" data-incident-search-hidden>
+            <div class="span-3">
+                <label for="startDate" class="form-label">Data inicial</label>
+                <input type="date" class="form-control" id="startDate" name="startDate" value="{{ startDate|default('') }}">
+            </div>
+            <div class="span-3">
+                <label for="endDate" class="form-label">Data final</label>
+                <input type="date" class="form-control" id="endDate" name="endDate" value="{{ endDate|default('') }}">
+            </div>
             <div class="span-3">
                 <label for="status_filter" class="form-label">Status</label>
                 <select class="form-select" id="status_filter" name="status_filter">
@@ -29,11 +37,38 @@
                 </select>
             </div>
             <div class="span-3">
+                <label for="incidentType" class="form-label">Tipo de incidente</label>
+                <select class="form-select" id="incidentType" name="incidentType">
+                    <option value="todos" {% if incidentType == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for type in incident_types %}
+                        <option value="{{ type.tipo_incidente }}" {% if incidentType == type.tipo_incidente %}selected{% endif %}>{{ type.tipo_incidente }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="cpa" class="form-label">CPA</label>
+                <select class="form-select" id="cpa" name="cpa" data-cpa-filter>
+                    <option value="todos" {% if cpa == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for cpa_name in cpas %}
+                        <option value="{{ cpa_name }}" {% if cpa == cpa_name %}selected{% endif %}>{{ cpa_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
+                <label for="btl" class="form-label">BTL</label>
+                <select class="form-select" id="btl" name="btl" data-btl-filter>
+                    <option value="todos" data-cpa="todos" {% if btl == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for unidade in unidades %}
+                        <option value="{{ unidade.btl }}" data-cpa="{{ unidade.cpa }}" {% if btl == unidade.btl %}selected{% endif %}>{{ unidade.btl }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="span-3">
                 <label for="sort_by" class="form-label">Ordenar por</label>
                 <select class="form-select" id="sort_by" name="sort_by">
                     <option value="start_date" {% if sort_by == 'start_date' %}selected{% endif %}>Data de abertura</option>
                     <option value="incident_type" {% if sort_by == 'incident_type' %}selected{% endif %}>Tipo</option>
-                    <option value="report_number" {% if sort_by == 'report_number' %}selected{% endif %}>Nº relatório</option>
+                    <option value="report_number" {% if sort_by == 'report_number' %}selected{% endif %}>N&ordm; relat&oacute;rio</option>
                 </select>
             </div>
             <div class="span-3">
@@ -43,9 +78,9 @@
                     <option value="asc" {% if direction_filter == 'asc' %}selected{% endif %}>Mais antigos</option>
                 </select>
             </div>
-            <div class="span-3 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end gap-2">
-                <button type="submit" class="btn btn-primary">Aplicar</button>
-                <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Limpar</a>
+            <div class="span-12 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end justify-content-end gap-2">
+                <button type="submit" class="btn btn-primary">Aplicar filtros</button>
+                <a href="{{ url_for('incidente.incidents_list') }}" class="btn btn-outline-secondary">Limpar filtros</a>
             </div>
         </form>
     </div>

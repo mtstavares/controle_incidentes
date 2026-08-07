@@ -637,7 +637,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (incidentFilterForm) {
                 const formData = new FormData(incidentFilterForm);
-                ['status_filter', 'sort_by', 'direction'].forEach(function (name) {
+                ['status_filter', 'startDate', 'endDate', 'incidentType', 'cpa', 'btl', 'sort_by', 'direction'].forEach(function (name) {
                     const value = formData.get(name);
                     if (value) {
                         params.set(name, value);
@@ -670,10 +670,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (incidentFilterForm) {
                 const formData = new FormData(incidentFilterForm);
-                ['status_filter', 'sort_by', 'direction'].forEach(function (name) {
+                ['status_filter', 'startDate', 'endDate', 'incidentType', 'cpa', 'btl', 'sort_by', 'direction'].forEach(function (name) {
                     const value = formData.get(name);
                     if (value) {
                         currentUrl.searchParams.set(name, value);
+                    } else {
+                        currentUrl.searchParams.delete(name);
                     }
                 });
             }
