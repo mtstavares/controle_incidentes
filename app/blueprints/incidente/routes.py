@@ -390,18 +390,49 @@ def _format_incident_durations(incidentes):
 
 
 def _build_incidents_query():
-    status_filter = request.args.get('status_filter')
+    status_filter = (request.args.get('status_filter') or request.args.get('status') or 'todos').strip()
     direction_filter = request.args.get('direction', 'desc')
     sort_by = request.args.get('sort_by', 'start_date')
     termo = request.args.get('q', '').strip()
+    start_date = _parse_dashboard_date(request.args.get('startDate') or request.args.get('start_date'), "Data inicial")
+    end_date = _parse_dashboard_date(request.args.get('endDate') or request.args.get('end_date'), "Data final")
+    incident_type = (request.args.get('incidentType') or request.args.get('incident_type') or 'todos').strip()
+    cpa = (request.args.get('cpa') or request.args.get('cpaId') or 'todos').strip()
+    btl = (request.args.get('btl') or request.args.get('btlId') or 'todos').strip()
 
     if len(termo) > MAX_SEARCH_LENGTH:
         abort(400)
+    if start_date and end_date and end_date < start_date:
+        abort(400, description="Periodo invalido.")
+    if incident_type and incident_type != 'todos' and not _incident_type_allowed(incident_type):
+        abort(400, description="Tipo de incidente invalido.")
+    if status_filter and status_filter != 'todos' and not StatusIncidente.query.filter_by(status=status_filter).first():
+        abort(400, description="Status invalido.")
+    if cpa and cpa != 'todos' and not Unidades.query.filter_by(cpa=cpa).first():
+        abort(400, description="CPA invalido.")
+    if btl and btl != 'todos':
+        if not cpa or cpa == 'todos':
+            abort(400, description="Selecione um CPA antes de filtrar por BTL.")
+        btl_query = Unidades.query.filter_by(btl=btl)
+        if cpa and cpa != 'todos':
+            btl_query = btl_query.filter_by(cpa=cpa)
+        if not btl_query.first():
+            abort(400, description="BTL nao pertence ao CPA informado.")
 
     query = Incidente.query
 
+    if start_date:
+        query = query.filter(Incidente.start_date >= datetime.combine(start_date, datetime.min.time()))
+    if end_date:
+        query = query.filter(Incidente.start_date < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
     if status_filter and status_filter != 'todos':
-        query = query.filter(Incidente.status_incident == status_filter)
+        query = query.filter(Incidente.status_incident.in_(_filter_values_with_legacy(status_filter)))
+    if incident_type and incident_type != 'todos':
+        query = query.filter(Incidente.incident_type.in_(_filter_values_with_legacy(incident_type)))
+    if cpa and cpa != 'todos':
+        query = query.filter(Incidente.cpa == cpa)
+    if btl and btl != 'todos':
+        query = query.filter(Incidente.btl == btl)
 
     if termo:
         query = query.filter(_incident_search_predicate(termo))
@@ -418,6 +449,11 @@ def _build_incidents_query():
         "direction_filter": direction_filter,
         "sort_by": sort_by if sort_by in SORTABLE_INCIDENT_FIELDS else "start_date",
         "q": termo,
+        "startDate": start_date.isoformat() if start_date else "",
+        "endDate": end_date.isoformat() if end_date else "",
+        "incidentType": incident_type,
+        "cpa": cpa,
+        "btl": btl,
     }
 
 
@@ -485,6 +521,7 @@ def incidents_list():
     open_incidents = Incidente.query.filter(~Incidente.status_incident.in_(closed_statuses)).count()
     closed_incidents = Incidente.query.filter(Incidente.status_incident.in_(closed_statuses)).count()
     status_options = _status_filter_options()
+    filter_options = _dashboard_filter_options()
 
     return render_template('incidente/incidentes.html',
                            title="Incidentes de segurança",
@@ -494,9 +531,17 @@ def incidents_list():
                            open_incidents=open_incidents,
                            closed_incidents=closed_incidents,
                            status_options=status_options,
+                           incident_types=filter_options["incident_types"],
+                           cpas=filter_options["cpas"],
+                           unidades=filter_options["unidades"],
                            direction_filter=filters["direction_filter"],
                            sort_by=filters["sort_by"],
                            status_filter=filters["status_filter"],
+                           startDate=filters["startDate"],
+                           endDate=filters["endDate"],
+                           incidentType=filters["incidentType"],
+                           cpa=filters["cpa"],
+                           btl=filters["btl"],
                            q=filters["q"])
 
 
@@ -517,6 +562,11 @@ def search_incidents():
             status_filter=request.args.get('status_filter'),
             direction_filter=request.args.get('direction', 'desc'),
             sort_by=request.args.get('sort_by', 'start_date'),
+            startDate=request.args.get('startDate') or request.args.get('start_date') or '',
+            endDate=request.args.get('endDate') or request.args.get('end_date') or '',
+            incidentType=request.args.get('incidentType') or request.args.get('incident_type') or 'todos',
+            cpa=request.args.get('cpa') or 'todos',
+            btl=request.args.get('btl') or 'todos',
             q=search_value,
             search_error=True,
         ), 500
@@ -527,6 +577,11 @@ def search_incidents():
         status_filter=filters["status_filter"],
         direction_filter=filters["direction_filter"],
         sort_by=filters["sort_by"],
+        startDate=filters["startDate"],
+        endDate=filters["endDate"],
+        incidentType=filters["incidentType"],
+        cpa=filters["cpa"],
+        btl=filters["btl"],
         q=filters["q"],
     )
 
