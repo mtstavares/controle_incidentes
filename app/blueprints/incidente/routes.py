@@ -21,12 +21,14 @@ from app.services.attachment_service import (
     save_incident_attachments,
 )
 from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
-from app.services.incident_duration import age_for_incident
+from app.services.incident_duration import age_for_incident, is_final_status
 from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_current_time, local_naive_now, local_now
 
 MAX_SEARCH_LENGTH = 200
 INCIDENTS_PER_PAGE = 10
 SAO_PAULO_TZ = APP_TIMEZONE
+FINAL_INCIDENT_STATUSES = ("Encerrado", "Falso Positivo")
+
 def _sort_units_query(query):
     return query.order_by(
         OrganizationalUnit.sort_order.is_(None),
@@ -202,6 +204,17 @@ def _status_filter_options():
         if row[0]
     )
     return [(value,) for value in sorted(set(values), key=str.casefold)]
+
+
+def _final_status_values():
+    values = []
+    for status in FINAL_INCIDENT_STATUSES:
+        values.extend(_filter_values_with_legacy(status))
+    return list(dict.fromkeys(values))
+
+
+def _is_final_incident_status(value):
+    return is_final_status(value)
 
 
 def _filter_values_with_legacy(value):
@@ -468,8 +481,9 @@ def incidents_list():
         flash("Não foi possível pesquisar os incidentes.", "danger")
         return redirect(url_for("incidente.incidents_list"))
     total_incidents = Incidente.query.count()
-    open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
-    closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
+    closed_statuses = _final_status_values()
+    open_incidents = Incidente.query.filter(~Incidente.status_incident.in_(closed_statuses)).count()
+    closed_incidents = Incidente.query.filter(Incidente.status_incident.in_(closed_statuses)).count()
     status_options = _status_filter_options()
 
     return render_template('incidente/incidentes.html',
@@ -851,7 +865,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         incident.cia = cia
         incident.description = description
         incident.description_plain_text = description_plain_text
-        if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
+        if _is_final_incident_status(status_incident) and not _is_final_incident_status(original_data['status_incident']):
             incident.end_date = local_naive_now()
 
         saved_attachments = []
@@ -1020,8 +1034,8 @@ def search_incident():
         incidentes=resultados,
         pagination=None,
         total_incidents=len(resultados),
-        open_incidents=len([inc for inc in resultados if inc.status_incident != 'Encerrado']),
-        closed_incidents=len([inc for inc in resultados if inc.status_incident == 'Encerrado']),
+        open_incidents=len([inc for inc in resultados if not _is_final_incident_status(inc.status_incident)]),
+        closed_incidents=len([inc for inc in resultados if _is_final_incident_status(inc.status_incident)]),
         status_options=status_options,
         direction_filter='desc',
         sort_by='start_date',
