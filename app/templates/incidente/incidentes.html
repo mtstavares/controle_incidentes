@@ -59,7 +59,7 @@
     </div>
     <div class="app-card__body">
         <div class="incident-registry__toolbar">
-            {% if current_user.profile in ['Admin', 'User'] %}
+            {% if can_current_user('incident.create') %}
             <a class="btn btn-primary" href="{{ url_for('incidente.new_incident') }}">Registrar novo incidente</a>
             {% endif %}
 

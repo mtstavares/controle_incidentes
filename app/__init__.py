@@ -117,6 +117,12 @@ def create_app(config_class=ProductionConfig):
     def inject_csrf_token():
         return {"csrf_token": get_csrf_token}
 
+    @app.context_processor
+    def inject_permission_helpers():
+        from app.services.permissions import can_current_user
+
+        return {"can_current_user": can_current_user}
+
     @app.before_request
     def enforce_csrf_and_password_change():
         g.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex

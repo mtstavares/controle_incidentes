@@ -25,17 +25,17 @@
                     maxlength="11"
                     value="{{ document_query or '' }}"
                     placeholder="Digite o CPF ou RE do Policial Militar"
-                    {% if current_user.profile == 'Viewer' %}aria-describedby="pm-viewer-help"{% endif %}
+                    {% if not can_current_user('utility.buscar_pm.search') %}aria-describedby="pm-viewer-help"{% endif %}
                     required
                 >
-                {% if current_user.profile == 'Viewer' %}
+                {% if not can_current_user('utility.buscar_pm.search') %}
                     <p id="pm-viewer-help" class="form-text text-muted">
                         Seu perfil possui apenas permissão de visualização. A consulta de policiais militares é permitida apenas para usuários Admin e User.
                     </p>
                 {% endif %}
             </div>
             <div class="filter-actions">
-                <button class="btn btn-primary" type="submit" data-loading-text="Consultando..." {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar CPF/RE</button>
+                <button class="btn btn-primary" type="submit" data-loading-text="Consultando..." {% if not can_current_user('utility.buscar_pm.search') %}disabled{% endif %}>Pesquisar CPF/RE</button>
             </div>
         </form>
 
@@ -56,7 +56,7 @@
                 >
             </div>
             <div class="filter-actions">
-                <button class="btn btn-secondary" type="submit" data-loading-text="Consultando..." {% if current_user.profile == 'Viewer' %}disabled{% endif %}>Pesquisar nome</button>
+                <button class="btn btn-secondary" type="submit" data-loading-text="Consultando..." {% if not can_current_user('utility.buscar_pm.search') %}disabled{% endif %}>Pesquisar nome</button>
             </div>
         </form>
     </div>

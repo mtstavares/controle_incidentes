@@ -13,10 +13,10 @@
         <a href="{{ return_url|default(url_for('incidente.incidents_list')) }}" class="btn btn-outline-secondary">Voltar</a>
     </div>
     <div class="incident-detail-actions__end">
-        {% if current_user.profile in ['Admin', 'User'] %}
+        {% if can_current_user('incident.edit') %}
             <a href="{{ url_for('incidente.edit_incident', incident_id=incidente.id) }}" class="btn btn-primary">Editar incidente</a>
         {% endif %}
-        {% if current_user.profile == 'Admin' %}
+        {% if can_current_user('incident.delete') %}
             <form method="POST" action="{{ url_for('incidente.delete_incident', incident_id=incidente.id) }}" data-prevent-duplicate>
                 <button type="submit" class="btn btn-outline-danger" data-loading-text="Excluindo..." onclick="return confirm('Tem certeza que deseja excluir este incidente?');">Excluir</button>
             </form>
@@ -74,7 +74,7 @@
                             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('incidente.open_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}" target="_blank" rel="noopener noreferrer">Abrir</a>
                         {% endif %}
                         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('incidente.download_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}">Download</a>
-                        {% if current_user.profile in ['Admin', 'User'] %}
+                        {% if can_current_user('incident.attachment.delete') %}
                         <form method="POST" action="{{ url_for('incidente.delete_attachment', incident_id=incidente.id, attachment_id=attachment.id) }}" data-prevent-duplicate>
                             <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Tem certeza que deseja excluir este anexo?');">Excluir</button>
                         </form>
@@ -96,7 +96,7 @@
         </div>
     </div>
     <div class="app-card__body">
-        {% if current_user.profile in ['Admin', 'User'] %}
+        {% if can_current_user('incident.comment.create') %}
         <form method="POST" action="{{ url_for('incidente.add_obs', incident_id=incidente.id) }}" class="mb-4" data-prevent-duplicate>
             <label for="texto_observacao" class="form-label">Nova observação</label>
             <textarea class="form-control" id="texto_observacao" name="texto_observacao" rows="4" required aria-required="true"></textarea>
@@ -115,7 +115,7 @@
                             <h3 class="h6 mb-1">{{ 'Alteração' if obs.autor_obs.name == 'system' else 'Observação' }}</h3>
                             <p class="text-muted small mb-0">Por {{ obs.autor_obs.name }} em {{ obs.data_observacao.strftime('%d/%m/%Y %H:%M:%S') }} - ID {{ obs.id }}</p>
                         </div>
-                        {% if obs.autor_obs == current_user or current_user.profile == 'Admin' %}
+                        {% if obs.autor_obs == current_user or can_current_user('incident.comment.delete.any') %}
                         <form method="POST" action="{{ url_for('incidente.delete_obs', incident_id=incidente.id, obs_id=obs.id) }}" data-prevent-duplicate>
                             <button type="submit" class="btn btn-outline-danger btn-sm" data-loading-text="Excluindo..." onclick="return confirm('Tem certeza que deseja excluir esta observação?');">Excluir</button>
                         </form>

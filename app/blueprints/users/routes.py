@@ -25,9 +25,6 @@ def user_loader(id):
     return db.session.query(User).filter_by(id=id, is_active=True).first()
 
 
-def allowed_edit_profile(profile):
-    return getattr(profile, "is_active", True) and profile.profile in ["Admin", "User"]
-
 
 @users_bp.route("/register", methods=["GET", "POST"])
 @admin_required

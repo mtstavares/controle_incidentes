@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.services.audit_service import AuditAction, registrar_auditoria
 from app.services.authz import admin_required
+from app.services.permissions import can
 from app.services.backup_service import (
     BackupConfigError,
     BackupError,
@@ -279,7 +280,7 @@ def excluir_usuario(user_id):
         return _delete_user_response("Autenticação necessária.", 401)
 
     actor = User.query.filter_by(id=current_user.id, is_active=True).with_for_update().first()
-    if not actor or actor.profile != "Admin":
+    if not actor or not can(actor, "admin.access"):
         registrar_auditoria(
             acao=AuditAction.USER_DELETE_DENIED,
             modulo="Administração",
@@ -326,7 +327,7 @@ def excluir_usuario(user_id):
         )
         return _delete_user_response("Usuário já está excluído.", 409)
 
-    if user.profile == "Admin":
+    if can(user, "admin.access"):
         registrar_auditoria(
             acao=AuditAction.USER_DELETE_DENIED,
             modulo="Administração",

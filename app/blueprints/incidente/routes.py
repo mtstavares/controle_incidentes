@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import unicodedata
 import plotly.express as px
 from werkzeug.exceptions import HTTPException
-from app.blueprints.users.routes import allowed_edit_profile
+from app.services.permissions import can_current_user, require_permission
 from app.services.audit_service import AuditAction, montar_alteracoes, registrar_auditoria
 from app.services.attachment_service import (
     AttachmentValidationError,
@@ -21,12 +21,14 @@ from app.services.attachment_service import (
     save_incident_attachments,
 )
 from app.services.content_sanitizer import SanitizationError, sanitize_incident_description
-from app.services.incident_duration import age_for_incident
+from app.services.incident_duration import age_for_incident, is_final_status
 from app.services.timezone_service import APP_TIMEZONE, combine_local_date_with_current_time, local_naive_now, local_now
 
 MAX_SEARCH_LENGTH = 200
 INCIDENTS_PER_PAGE = 10
 SAO_PAULO_TZ = APP_TIMEZONE
+FINAL_INCIDENT_STATUSES = ("Encerrado", "Falso Positivo")
+
 def _sort_units_query(query):
     return query.order_by(
         OrganizationalUnit.sort_order.is_(None),
@@ -133,20 +135,14 @@ def _is_safe_internal_path(path):
     return not parsed.scheme and not parsed.netloc and path.startswith("/") and not path.startswith("//")
 
 
-def _ensure_incident_delete_admin(incident):
-    """Only admins can delete incidents."""
-    if current_user.profile == "Admin":
-        return
-    registrar_auditoria(
-        acao=AuditAction.ACESSO_NEGADO,
-        modulo="Incidentes de segurança",
+def _ensure_incident_delete_allowed(incident):
+    require_permission(
+        "incident.delete",
+        modulo="Incidentes de seguran??a",
         entidade="Incidente",
         entidade_id=incident.id,
         descricao="Tentativa negada de excluir incidente sem perfil Admin.",
-        resultado="NEGADO",
     )
-    abort(403)
-
 
 def _today_local_date():
     return local_now().date()
@@ -208,6 +204,17 @@ def _status_filter_options():
         if row[0]
     )
     return [(value,) for value in sorted(set(values), key=str.casefold)]
+
+
+def _final_status_values():
+    values = []
+    for status in FINAL_INCIDENT_STATUSES:
+        values.extend(_filter_values_with_legacy(status))
+    return list(dict.fromkeys(values))
+
+
+def _is_final_incident_status(value):
+    return is_final_status(value)
 
 
 def _filter_values_with_legacy(value):
@@ -474,8 +481,9 @@ def incidents_list():
         flash("Não foi possível pesquisar os incidentes.", "danger")
         return redirect(url_for("incidente.incidents_list"))
     total_incidents = Incidente.query.count()
-    open_incidents = Incidente.query.filter(Incidente.status_incident != 'Encerrado').count()
-    closed_incidents = Incidente.query.filter(Incidente.status_incident == 'Encerrado').count()
+    closed_statuses = _final_status_values()
+    open_incidents = Incidente.query.filter(~Incidente.status_incident.in_(closed_statuses)).count()
+    closed_incidents = Incidente.query.filter(Incidente.status_incident.in_(closed_statuses)).count()
     status_options = _status_filter_options()
 
     return render_template('incidente/incidentes.html',
@@ -528,7 +536,7 @@ def search_incidents():
 
 @login_required
 def new_incident():
-    if allowed_edit_profile(current_user): # função para verificar permissão do usuário para edição
+    if can_current_user("incident.create"):
         data_atual = _today_local_date()
         unidades = Unidades.query.all()
         commands, organizational_units = _organizational_form_options()
@@ -732,7 +740,7 @@ def new_incident():
 @incidente_bp.route("/incidente/<int:incident_id>/edit", methods=['GET', 'POST'])
 @login_required
 def edit_incident(incident_id): # Rota para editar um incidente
-    if not allowed_edit_profile(current_user):
+    if not can_current_user("incident.edit"):
         current_app.logger.info(f"Usuario {current_user.id} tentou editar o incidente {incident_id}. Sem permissão. {current_user.profile}")
         flash('Acesso negado: Você não tem permissão para editar este incidente.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
@@ -857,7 +865,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         incident.cia = cia
         incident.description = description
         incident.description_plain_text = description_plain_text
-        if status_incident == 'Encerrado' and original_data['status_incident'] != 'Encerrado':
+        if _is_final_incident_status(status_incident) and not _is_final_incident_status(original_data['status_incident']):
             incident.end_date = local_naive_now()
 
         saved_attachments = []
@@ -962,11 +970,8 @@ def edit_incident(incident_id): # Rota para editar um incidente
 @incidente_bp.route("/incidente/delete/<int:incident_id>", methods=['POST'])
 @login_required
 def delete_incident(incident_id):
-    if getattr(current_user, "profile", None) != "Admin":
-        abort(403)
-
     incident = Incidente.query.get_or_404(incident_id)
-    _ensure_incident_delete_admin(incident)
+    _ensure_incident_delete_allowed(incident)
     report_number = incident.report_number
 
     try:
@@ -1029,8 +1034,8 @@ def search_incident():
         incidentes=resultados,
         pagination=None,
         total_incidents=len(resultados),
-        open_incidents=len([inc for inc in resultados if inc.status_incident != 'Encerrado']),
-        closed_incidents=len([inc for inc in resultados if inc.status_incident == 'Encerrado']),
+        open_incidents=len([inc for inc in resultados if not _is_final_incident_status(inc.status_incident)]),
+        closed_incidents=len([inc for inc in resultados if _is_final_incident_status(inc.status_incident)]),
         status_options=status_options,
         direction_filter='desc',
         sort_by='start_date',
@@ -1048,7 +1053,7 @@ def search_incident():
 @incidente_bp.route("/incidente/<int:incident_id>/add_obs", methods=['POST'])
 @login_required
 def add_obs(incident_id):
-    if allowed_edit_profile(current_user):
+    if can_current_user("incident.comment.create"):
         # Rota para adicionar observação ao incidente
         texto_observacao = request.form['texto_observacao']
         user_id = current_user.id # Usuário logado
@@ -1085,7 +1090,7 @@ def add_obs(incident_id):
 def delete_obs(incident_id, obs_id):
     # Rota para excluir observação
     obs = IncidenteObs.query.get_or_404(obs_id)
-    if obs.autor_obs != current_user and current_user.profile != 'Admin':
+    if obs.autor_obs != current_user and not can_current_user("incident.comment.delete.any"):
         flash('Acesso negado: Você não tem permissão para excluir esta observação.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
@@ -1157,7 +1162,7 @@ def download_attachment(incident_id, attachment_id):
 @incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>/delete", methods=['POST'])
 @login_required
 def delete_attachment(incident_id, attachment_id):
-    if not allowed_edit_profile(current_user):
+    if not can_current_user("incident.attachment.delete"):
         abort(403)
     Incidente.query.get_or_404(incident_id)
     attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()

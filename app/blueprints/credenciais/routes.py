@@ -6,6 +6,7 @@ from app import db
 from app.blueprints.credenciais import credenciais_bp
 from app.models import CredencialComprometida
 from app.services.audit_service import AuditAction, registrar_auditoria
+from app.services.permissions import can_current_user
 from app.services.credential_service import (
     apply_credential_filters,
     build_monthly_import_preview,
@@ -16,8 +17,6 @@ from app.services.credential_service import (
     order_credentials,
 )
 
-
-IMPORT_PROFILES = {"Admin", "User"}
 
 
 def _safe_per_page():
@@ -86,7 +85,7 @@ def listar_credenciais():
         direction=direction,
         situacoes_legais=_situacoes_legais(),
         error_message=error_message,
-        can_import=getattr(current_user, "profile", None) in IMPORT_PROFILES,
+        can_import=can_current_user("credential.import"),
         import_preview=None,
     )
 
@@ -117,7 +116,7 @@ def listar_credenciais_api():
 @credenciais_bp.route("/credenciais-comprometidas/importar/previsualizar", methods=["POST"])
 @login_required
 def previsualizar_importacao_mensal():
-    if getattr(current_user, "profile", None) not in IMPORT_PROFILES:
+    if not can_current_user("credential.import"):
         registrar_auditoria(
             acao=AuditAction.ACESSO_NEGADO,
             modulo="Credenciais comprometidas",
@@ -182,7 +181,7 @@ def previsualizar_importacao_mensal():
 @credenciais_bp.route("/credenciais-comprometidas/importar/confirmar", methods=["POST"])
 @login_required
 def confirmar_importacao_mensal():
-    if getattr(current_user, "profile", None) not in IMPORT_PROFILES:
+    if not can_current_user("credential.import"):
         registrar_auditoria(
             acao=AuditAction.ACESSO_NEGADO,
             modulo="Credenciais comprometidas",
@@ -235,7 +234,7 @@ def confirmar_importacao_mensal():
 @credenciais_bp.route("/credenciais-comprometidas/importar/cancelar", methods=["POST"])
 @login_required
 def cancelar_importacao_mensal():
-    if getattr(current_user, "profile", None) not in IMPORT_PROFILES:
+    if not can_current_user("credential.import"):
         registrar_auditoria(
             acao=AuditAction.ACESSO_NEGADO,
             modulo="Credenciais comprometidas",

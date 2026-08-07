@@ -58,7 +58,7 @@
         </nav>
     </div>
 
-    {% if current_user.is_authenticated and current_user.profile == 'Admin' %}
+    {% if can_current_user('admin.access') %}
     <div class="sidebar-section">
         <p class="sidebar-label">Administração</p>
         <nav class="sidebar-nav">
