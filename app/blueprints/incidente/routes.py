@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import String, cast, func, or_
 from urllib.parse import urlsplit
 from types import SimpleNamespace
+import re
 import unicodedata
 import plotly.express as px
 from werkzeug.exceptions import HTTPException
@@ -223,6 +224,116 @@ def _filter_values_with_legacy(value):
     return values
 
 
+def _normalize_unit_filter_key(value):
+    normalized = unicodedata.normalize("NFKC", value or "").casefold()
+    normalized = normalized.replace("\u00ba", "o").replace("\u00b0", "o")
+    return "".join(normalized.split())
+
+
+def _unit_label_priority(label, count=0):
+    compact = "".join((label or "").split())
+    has_no_internal_spaces = int(compact == (label or "").strip())
+    return (count or 0, has_no_internal_spaces, -len(label or ""), label or "")
+
+
+LOCAL_CPA_FILTER_KEYS = {"cpalocal", "diretorialocal"}
+LOCAL_BTL_FILTER_KEYS = {"btllocal", "unidadelocal"}
+
+
+def _is_local_filter_option(cpa, btl=None):
+    cpa_key = _normalize_unit_filter_key(cpa)
+    btl_key = _normalize_unit_filter_key(btl) if btl is not None else ""
+    return cpa_key in LOCAL_CPA_FILTER_KEYS or btl_key in LOCAL_BTL_FILTER_KEYS
+
+
+def _cpa_filter_sort_key(value):
+    label = (value or "").strip()
+    normalized = unicodedata.normalize("NFKC", label).casefold()
+    match = re.fullmatch(r"(cpa|cpi)[-/\s]*(?:m[-/\s]*)?(\d+)", normalized)
+    if match:
+        group = 0 if match.group(1) == "cpa" else 1
+        return (group, int(match.group(2)), label.casefold())
+    return (2, label.casefold())
+
+
+def _deduplicated_cpa_options():
+    cpa_rows = db.session.query(Unidades.cpa).filter(Unidades.cpa.isnot(None)).distinct().all()
+    command_rows = db.session.query(OrganizationalCommand.name).filter(OrganizationalCommand.name.isnot(None)).all()
+    official_by_key = {
+        _normalize_unit_filter_key(row[0]): row[0].strip()
+        for row in command_rows
+        if row[0] and row[0].strip()
+    }
+    grouped = {}
+
+    for row in cpa_rows:
+        cpa_name = (row[0] or "").strip()
+        if not cpa_name or _is_local_filter_option(cpa_name):
+            continue
+        key = _normalize_unit_filter_key(cpa_name)
+        official = official_by_key.get(key)
+        candidate = official or cpa_name
+        current = grouped.get(key)
+        if current is None or _unit_label_priority(candidate) > _unit_label_priority(current):
+            grouped[key] = candidate
+
+    return sorted(grouped.values(), key=_cpa_filter_sort_key)
+
+
+def _deduplicated_unit_options():
+    count_rows = (
+        db.session.query(Incidente.cpa, Incidente.btl, db.func.count(Incidente.id))
+        .filter(Incidente.cpa.isnot(None), Incidente.btl.isnot(None))
+        .group_by(Incidente.cpa, Incidente.btl)
+        .all()
+    )
+    incident_counts = {(cpa, btl): count for cpa, btl, count in count_rows}
+    grouped_units = {}
+
+    for cpa, btl in db.session.query(Unidades.cpa, Unidades.btl).filter(
+        Unidades.cpa.isnot(None),
+        Unidades.btl.isnot(None),
+    ).all():
+        cpa_name = (cpa or "").strip()
+        btl_name = (btl or "").strip()
+        if not cpa_name or not btl_name or _is_local_filter_option(cpa_name, btl_name):
+            continue
+        key = (cpa_name, _normalize_unit_filter_key(btl_name))
+        current = grouped_units.get(key)
+        candidate = SimpleNamespace(
+            cpa=cpa_name,
+            btl=btl_name,
+            count=incident_counts.get((cpa_name, btl_name), 0),
+        )
+        if current is None or _unit_label_priority(candidate.btl, candidate.count) > _unit_label_priority(current.btl, current.count):
+            grouped_units[key] = candidate
+
+    return sorted(grouped_units.values(), key=lambda item: (item.cpa.casefold(), item.btl.casefold()))
+
+
+def _btl_filter_values(cpa, btl):
+    cpa_name = (cpa or "").strip()
+    btl_key = _normalize_unit_filter_key(btl)
+    if not cpa_name or not btl_key:
+        return []
+
+    values = []
+    candidate_rows = db.session.query(Unidades.btl).filter(Unidades.cpa == cpa_name, Unidades.btl.isnot(None)).all()
+    candidate_rows += db.session.query(Incidente.btl).filter(
+        Incidente.cpa == cpa_name,
+        Incidente.btl.isnot(None),
+    ).distinct().all()
+
+    for row_btl, in candidate_rows:
+        value = (row_btl or "").strip()
+        if value and _normalize_unit_filter_key(value) == btl_key:
+            values.append(value)
+
+    if (btl or "").strip() and (btl or "").strip() not in values:
+        values.append((btl or "").strip())
+    return list(dict.fromkeys(values))
+
+
 def _escape_like(value):
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -410,13 +521,12 @@ def _build_incidents_query():
         abort(400, description="Status invalido.")
     if cpa and cpa != 'todos' and not Unidades.query.filter_by(cpa=cpa).first():
         abort(400, description="CPA invalido.")
+    btl_values = []
     if btl and btl != 'todos':
         if not cpa or cpa == 'todos':
             abort(400, description="Selecione um CPA antes de filtrar por BTL.")
-        btl_query = Unidades.query.filter_by(btl=btl)
-        if cpa and cpa != 'todos':
-            btl_query = btl_query.filter_by(cpa=cpa)
-        if not btl_query.first():
+        btl_values = _btl_filter_values(cpa, btl)
+        if not btl_values:
             abort(400, description="BTL nao pertence ao CPA informado.")
 
     query = Incidente.query
@@ -432,7 +542,7 @@ def _build_incidents_query():
     if cpa and cpa != 'todos':
         query = query.filter(Incidente.cpa == cpa)
     if btl and btl != 'todos':
-        query = query.filter(Incidente.btl == btl)
+        query = query.filter(Incidente.btl.in_(btl_values))
 
     if termo:
         query = query.filter(_incident_search_predicate(termo))
@@ -1261,9 +1371,8 @@ def _parse_dashboard_date(value, field_name):
 
 
 def _dashboard_filter_options():
-    cpa_rows = db.session.query(Unidades.cpa).filter(Unidades.cpa.isnot(None)).distinct().order_by(Unidades.cpa.asc()).all()
-    cpas = [row[0] for row in cpa_rows if row[0]]
-    unidades = Unidades.query.order_by(Unidades.cpa.asc(), Unidades.btl.asc()).all()
+    cpas = _deduplicated_cpa_options()
+    unidades = _deduplicated_unit_options()
     incident_types = [
         SimpleNamespace(tipo_incidente=value)
         for value in _incident_type_values()
@@ -1300,14 +1409,13 @@ def _dashboard_filters_from_request():
         abort(400, description="Status inválido.")
     if cpa and cpa != "todos" and not Unidades.query.filter_by(cpa=cpa).first():
         abort(400, description="CPA inválido.")
+    btl_values = []
     if btl and btl != "todos":
         if not cpa or cpa == "todos":
             abort(400, description="Selecione um CPA antes de filtrar por BTL.")
-        btl_query = Unidades.query.filter_by(btl=btl)
-        if cpa and cpa != "todos":
-            btl_query = btl_query.filter_by(cpa=cpa)
-        if not btl_query.first():
-            abort(400, description="BTL não pertence ao CPA informado.")
+        btl_values = _btl_filter_values(cpa, btl)
+        if not btl_values:
+            abort(400, description="BTL nao pertence ao CPA informado.")
 
     return {
         "view": view,
@@ -1319,6 +1427,7 @@ def _dashboard_filters_from_request():
         "status": status_filter,
         "cpa": cpa,
         "btl": btl,
+        "btl_values": btl_values,
     }
 
 
@@ -1334,7 +1443,7 @@ def _filtered_incident_query(filters):
     if filters["cpa"] != "todos":
         query = query.filter(Incidente.cpa == filters["cpa"])
     if filters["btl"] != "todos":
-        query = query.filter(Incidente.btl == filters["btl"])
+        query = query.filter(Incidente.btl.in_(filters.get("btl_values") or [filters["btl"]]))
     return query
 
 
