@@ -72,6 +72,7 @@ MONTHLY_POSITIVE_REQUIRED_COLUMNS = {
     "observacoes",
     "mensagem_bloqueio_rds",
 }
+MONTHLY_IGNORED_COLUMNS = {"senha", "screenshot"}
 MONTHLY_PREVIEW_DIR = "credential_import_previews"
 MONTHLY_BATCH_ACTIVE = "ativo"
 MONTHLY_BATCH_REPLACED = "substituido"
@@ -103,6 +104,8 @@ COLUMN_ALIASES = {
     "data das identifica es": "data_identificacoes",
     "fonte": "fonte",
     "senha": "senha",
+    "screenshot": "screenshot",
+    "screen shot": "screenshot",
 }
 
 TRUE_VALUES = {"sim", "s", "true", "1", "positivo", "positiva", "yes", "y"}
@@ -765,9 +768,9 @@ def _iter_sheet_rows(ws, header_map):
 
 
 def _row_has_formula_outside_password(ws, row, header_map):
-    password_col = header_map.get("senha")
+    ignored_cols = {header_map[key] for key in MONTHLY_IGNORED_COLUMNS if header_map.get(key)}
     for col in range(1, ws.max_column + 1):
-        if col == password_col:
+        if col in ignored_cols:
             continue
         value = ws.cell(row, col).value
         if isinstance(value, str) and value.startswith("="):
