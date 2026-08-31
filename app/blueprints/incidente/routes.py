@@ -224,6 +224,14 @@ def _filter_values_with_legacy(value):
     return values
 
 
+def _active_incidents_query():
+    return Incidente.query.filter(Incidente.deleted_at.is_(None))
+
+
+def _active_incident_or_404(incident_id):
+    return _active_incidents_query().filter(Incidente.id == incident_id).first_or_404()
+
+
 def _normalize_unit_filter_key(value):
     normalized = unicodedata.normalize("NFKC", value or "").casefold()
     normalized = normalized.replace("\u00ba", "o").replace("\u00b0", "o")
@@ -284,6 +292,7 @@ def _deduplicated_unit_options():
     count_rows = (
         db.session.query(Incidente.cpa, Incidente.btl, db.func.count(Incidente.id))
         .filter(Incidente.cpa.isnot(None), Incidente.btl.isnot(None))
+        .filter(Incidente.deleted_at.is_(None))
         .group_by(Incidente.cpa, Incidente.btl)
         .all()
     )
@@ -322,6 +331,7 @@ def _btl_filter_values(cpa, btl):
     candidate_rows += db.session.query(Incidente.btl).filter(
         Incidente.cpa == cpa_name,
         Incidente.btl.isnot(None),
+        Incidente.deleted_at.is_(None),
     ).distinct().all()
 
     for row_btl, in candidate_rows:
@@ -529,7 +539,7 @@ def _build_incidents_query():
         if not btl_values:
             abort(400, description="BTL nao pertence ao CPA informado.")
 
-    query = Incidente.query
+    query = _active_incidents_query()
 
     if start_date:
         query = query.filter(Incidente.start_date >= datetime.combine(start_date, datetime.min.time()))
@@ -626,10 +636,10 @@ def incidents_list():
         _log_incident_search_failure(search_value)
         flash("Não foi possível pesquisar os incidentes.", "danger")
         return redirect(url_for("incidente.incidents_list"))
-    total_incidents = Incidente.query.count()
+    total_incidents = _active_incidents_query().count()
     closed_statuses = _final_status_values()
-    open_incidents = Incidente.query.filter(~Incidente.status_incident.in_(closed_statuses)).count()
-    closed_incidents = Incidente.query.filter(Incidente.status_incident.in_(closed_statuses)).count()
+    open_incidents = _active_incidents_query().filter(~Incidente.status_incident.in_(closed_statuses)).count()
+    closed_incidents = _active_incidents_query().filter(Incidente.status_incident.in_(closed_statuses)).count()
     status_options = _status_filter_options()
     filter_options = _dashboard_filter_options()
 
@@ -910,7 +920,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
         flash('Acesso negado: Você não tem permissão para editar este incidente.', 'danger')
         return redirect(url_for('incidente.incident_view', incident_id=incident_id))
 
-    incident = Incidente.query.get_or_404(incident_id)
+    incident = _active_incident_or_404(incident_id)
     data_atual = _today_local_date()
     unidades = Unidades.query.all()
     commands, organizational_units = _organizational_form_options()
@@ -1135,7 +1145,7 @@ def edit_incident(incident_id): # Rota para editar um incidente
 @incidente_bp.route("/incidente/delete/<int:incident_id>", methods=['POST'])
 @login_required
 def delete_incident(incident_id):
-    incident = Incidente.query.get_or_404(incident_id)
+    incident = _active_incident_or_404(incident_id)
     _ensure_incident_delete_allowed(incident)
     report_number = incident.report_number
 
@@ -1177,7 +1187,7 @@ def search_incident():
     if not termo:
         return redirect(url_for('incidente.incidents_list'))
 
-    query = Incidente.query
+    query = _active_incidents_query()
     search_terms = f"%{termo}%"
 
     filters = [
@@ -1219,6 +1229,7 @@ def search_incident():
 @login_required
 def add_obs(incident_id):
     if can_current_user("incident.comment.create"):
+        _active_incident_or_404(incident_id)
         # Rota para adicionar observação ao incidente
         texto_observacao = request.form['texto_observacao']
         user_id = current_user.id # Usuário logado
@@ -1280,7 +1291,7 @@ def delete_obs(incident_id, obs_id):
 @login_required
 def incident_view(incident_id):
     # Rota para visualizar detalhes de um incidente específico
-    incidente = Incidente.query.get_or_404(incident_id)
+    incidente = _active_incident_or_404(incident_id)
     return_to = request.args.get("return_to", "")
     return_url = return_to if _is_safe_internal_path(return_to) else url_for('incidente.incidents_list')
     return render_template('incidente/incidente_view.html', title="Detalhes do Incidente", incidente=incidente, return_url=return_url, is_inline_attachment=_is_inline_attachment)
@@ -1289,8 +1300,8 @@ def incident_view(incident_id):
 @incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>", methods=['GET'])
 @login_required
 def open_attachment(incident_id, attachment_id):
-    Incidente.query.get_or_404(incident_id)
-    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    _active_incident_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id, deleted_at=None).first_or_404()
     if not _is_inline_attachment(attachment):
         return redirect(url_for('incidente.download_attachment', incident_id=incident_id, attachment_id=attachment_id))
     path = resolve_attachment_path(attachment)
@@ -1309,8 +1320,8 @@ def open_attachment(incident_id, attachment_id):
 @incidente_bp.route("/incidentes/<int:incident_id>/anexos/<int:attachment_id>/download", methods=['GET'])
 @login_required
 def download_attachment(incident_id, attachment_id):
-    Incidente.query.get_or_404(incident_id)
-    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    _active_incident_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id, deleted_at=None).first_or_404()
     path = resolve_attachment_path(attachment)
     registrar_auditoria(
         acao=AuditAction.DOWNLOAD_ANEXO,
@@ -1329,8 +1340,8 @@ def download_attachment(incident_id, attachment_id):
 def delete_attachment(incident_id, attachment_id):
     if not can_current_user("incident.attachment.delete"):
         abort(403)
-    Incidente.query.get_or_404(incident_id)
-    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id).first_or_404()
+    _active_incident_or_404(incident_id)
+    attachment = IncidentAttachment.query.filter_by(id=attachment_id, incident_id=incident_id, deleted_at=None).first_or_404()
     original_filename = attachment.original_filename
     delete_attachment_file(attachment)
     db.session.delete(attachment)
@@ -1432,7 +1443,7 @@ def _dashboard_filters_from_request():
 
 
 def _filtered_incident_query(filters):
-    query = Incidente.query.filter(
+    query = _active_incidents_query().filter(
         Incidente.start_date >= filters["start_dt"],
         Incidente.start_date < filters["end_exclusive_dt"],
     )
