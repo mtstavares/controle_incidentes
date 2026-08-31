@@ -6,77 +6,8 @@ DATA_ROOT="${DATA_ROOT:-$HOME/apps/divciber-data}"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/apps/divciber-backups}"
 INSTANCE_DIR="$DATA_ROOT/instance"
 LOG_DIR="$DATA_ROOT/logs"
-DEPLOY_USE_WIFI="${DEPLOY_USE_WIFI:-0}"
-DEPLOY_WIFI_IFACE="${DEPLOY_WIFI_IFACE:-wlp2s0b1}"
-DEPLOY_WIFI_GATEWAY="${DEPLOY_WIFI_GATEWAY:-192.168.1.1}"
-DEPLOY_WIRED_IFACE="${DEPLOY_WIRED_IFACE:-enp12s0}"
-DEPLOY_WIRED_GATEWAY="${DEPLOY_WIRED_GATEWAY:-10.44.44.1}"
-DEPLOY_INTERNET_DNS="${DEPLOY_INTERNET_DNS:-nameserver 192.168.1.1
-nameserver 8.8.8.8
-nameserver 1.1.1.1}"
-DEPLOY_INTRANET_DNS="${DEPLOY_INTRANET_DNS:-nameserver 10.61.255.62
-nameserver 10.61.255.63
-search intranet.policiamilitar.sp.gov.br policiamilitar.sp.gov.br mgmt.policiamilitar.sp.gov.br}"
-NETWORK_RESTORE_NEEDED=0
 
 cd "$APP_DIR"
-
-run_privileged() {
-  if [ "$(id -u)" -eq 0 ]; then
-    "$@"
-    return
-  fi
-
-  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    sudo "$@"
-    return
-  fi
-
-  echo "Nao foi possivel alterar rede automaticamente: execute como root ou habilite sudo sem senha para este usuario." >&2
-  echo "Alternativa manual: troque rota/DNS para Wi-Fi, execute o deploy e depois restaure rota/DNS da intranet." >&2
-  exit 1
-}
-
-write_resolv_conf() {
-  local content="$1"
-  run_privileged sh -c "printf '%s\n' \"\$1\" > /etc/resolv.conf" sh "$content"
-}
-
-set_internet_network() {
-  if [ "$DEPLOY_USE_WIFI" != "1" ]; then
-    return
-  fi
-
-  echo "Ativando rede temporaria de deploy pela Wi-Fi (${DEPLOY_WIFI_IFACE})..."
-  run_privileged cp /etc/resolv.conf /tmp/divciber-resolv.conf.pre-deploy
-  run_privileged ip route replace default via "$DEPLOY_WIFI_GATEWAY" dev "$DEPLOY_WIFI_IFACE" metric 50
-  run_privileged ip route replace default via "$DEPLOY_WIRED_GATEWAY" dev "$DEPLOY_WIRED_IFACE" metric 200
-  write_resolv_conf "$DEPLOY_INTERNET_DNS"
-  NETWORK_RESTORE_NEEDED=1
-
-  if ! getent hosts github.com >/dev/null 2>&1; then
-    echo "DNS externo nao resolveu github.com mesmo apos troca para Wi-Fi." >&2
-    exit 1
-  fi
-}
-
-restore_intranet_network() {
-  if [ "$NETWORK_RESTORE_NEEDED" != "1" ]; then
-    return
-  fi
-
-  echo "Restaurando rota e DNS da intranet..."
-  run_privileged ip route replace default via "$DEPLOY_WIRED_GATEWAY" dev "$DEPLOY_WIRED_IFACE" metric 50
-  run_privileged ip route replace default via "$DEPLOY_WIFI_GATEWAY" dev "$DEPLOY_WIFI_IFACE" metric 600
-  write_resolv_conf "$DEPLOY_INTRANET_DNS"
-  NETWORK_RESTORE_NEEDED=0
-}
-
-cleanup_network() {
-  restore_intranet_network || true
-}
-
-trap cleanup_network EXIT
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker nao encontrado. Instale o Docker antes de executar o deploy." >&2
@@ -87,8 +18,6 @@ if ! docker compose version >/dev/null 2>&1; then
   echo "Docker Compose plugin nao encontrado. Instale docker-compose-plugin." >&2
   exit 1
 fi
-
-set_internet_network
 
 if [ "${SKIP_GIT_PULL:-0}" != "1" ] && [ -d .git ]; then
   CURRENT_BRANCH="$(git branch --show-current)"
@@ -164,8 +93,6 @@ ensure_env_var "DIVCIBER_BACKUP_MIN_FULL" "4"
 
 echo "Construindo imagem Docker..."
 docker compose build
-
-restore_intranet_network
 
 echo "Aplicando migrations..."
 docker compose run --rm divciber flask db upgrade
