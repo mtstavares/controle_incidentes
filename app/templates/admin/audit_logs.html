@@ -42,8 +42,9 @@
             </div>
             <div class="span-12 d-flex flex-column flex-sm-row justify-content-end gap-2">
                 <button class="btn btn-primary" type="submit">Aplicar filtros</button>
-                <a class="btn btn-outline-primary" href="{{ url_for('admin.audit_logs_export', **pagination_args) }}">Exportar logs</a>
+                
                 <a class="btn btn-outline-secondary" href="{{ url_for('admin.audit_logs') }}">Limpar filtros</a>
+                <a class="btn btn-outline-primary" href="{{ url_for('admin.audit_logs_export', **pagination_args) }}">Exportar logs</a>
             </div>
         </form>
     </div>
