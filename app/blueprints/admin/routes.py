@@ -1,3 +1,6 @@
+import csv
+import io
+import json
 import re
 import threading
 import unicodedata
@@ -12,6 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    Response,
     url_for,
 )
 from flask_login import current_user
@@ -49,7 +53,9 @@ from app.services.backup_service import (
 )
 from app.services.timezone_service import (
     local_date_bounds_as_utc_naive,
+    local_now,
     parse_iso_date,
+    to_local,
     utc_now,
 )
 from app.services.user_service import PERFIS_PERMITIDOS, senha_confere
@@ -168,6 +174,63 @@ def _parse_date(value, end=False):
 
 def _wants_json():
     return request.accept_mimetypes.best == "application/json" or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _audit_log_filters(args):
+    per_page = min(max(args.get("per_page", 50, type=int), 1), 100)
+    return {
+        "start_date": args.get("start_date", "").strip(),
+        "end_date": args.get("end_date", "").strip(),
+        "usuario": args.get("usuario", "").strip(),
+        "acao": args.get("acao", "").strip(),
+        "resultado": args.get("resultado", "").strip(),
+        "per_page": str(per_page),
+    }
+
+
+def _filtered_audit_log_query(filters):
+    query = AuditLog.query
+    start_date = _parse_date(filters.get("start_date"))
+    end_date = _parse_date(filters.get("end_date"), end=True)
+    usuario = filters.get("usuario")
+    acao = filters.get("acao")
+    resultado = filters.get("resultado")
+
+    if start_date:
+        query = query.filter(AuditLog.timestamp >= start_date)
+    if end_date:
+        query = query.filter(AuditLog.timestamp <= end_date)
+    if usuario:
+        query = query.filter(AuditLog.usuario_identificacao.ilike(f"%{usuario}%"))
+    if acao:
+        query = query.filter(AuditLog.acao == acao)
+    if resultado:
+        query = query.filter(AuditLog.resultado == resultado)
+    return query
+
+
+def _audit_log_action_options():
+    return [
+        AuditAction.LOGIN,
+        AuditAction.LOGOUT,
+        AuditAction.LOGIN_FALHOU,
+        AuditAction.CRIAR,
+        AuditAction.EDITAR,
+        AuditAction.EXCLUIR,
+        AuditAction.VISUALIZAR,
+        AuditAction.ALTERAR_SENHA,
+        AuditAction.CRIAR_USUARIO,
+        AuditAction.ALTERAR_USUARIO,
+        AuditAction.ADICIONAR_OBSERVACAO,
+        AuditAction.EXCLUIR_OBSERVACAO,
+        AuditAction.ACESSO_NEGADO,
+        AuditAction.IMPORTAR_CREDENCIAIS,
+        "BACKUP_MANUAL",
+        "BACKUP_AUTOMATICO",
+        "VALIDAR_BACKUP",
+        "RESTAURACAO_SOLICITADA",
+        "RESTAURACAO_CONCLUIDA",
+    ]
 
 
 def _human_size(value):
@@ -849,39 +912,15 @@ def biblioteca_unidade_excluir(unit_id):
 @admin_required
 def audit_logs():
     page = max(request.args.get("page", 1, type=int), 1)
-    per_page = min(max(request.args.get("per_page", 50, type=int), 1), 100)
-    query = AuditLog.query
-
-    start_date = _parse_date(request.args.get("start_date"))
-    end_date = _parse_date(request.args.get("end_date"), end=True)
-    usuario = request.args.get("usuario", "").strip()
-    acao = request.args.get("acao", "").strip()
-    resultado = request.args.get("resultado", "").strip()
-
-    if start_date:
-        query = query.filter(AuditLog.timestamp >= start_date)
-    if end_date:
-        query = query.filter(AuditLog.timestamp <= end_date)
-    if usuario:
-        query = query.filter(AuditLog.usuario_identificacao.ilike(f"%{usuario}%"))
-    if acao:
-        query = query.filter(AuditLog.acao == acao)
-    if resultado:
-        query = query.filter(AuditLog.resultado == resultado)
+    filtros = _audit_log_filters(request.args)
+    per_page = int(filtros["per_page"])
+    query = _filtered_audit_log_query(filtros)
 
     pagination = query.order_by(AuditLog.timestamp.desc()).paginate(
         page=page,
         per_page=per_page,
         error_out=False,
     )
-    filtros = {
-        "start_date": request.args.get("start_date", ""),
-        "end_date": request.args.get("end_date", ""),
-        "usuario": usuario,
-        "acao": acao,
-        "resultado": resultado,
-        "per_page": str(per_page),
-    }
     pagination_args = {key: value for key, value in filtros.items() if value}
 
     registrar_auditoria(
@@ -898,27 +937,61 @@ def audit_logs():
         pagination=pagination,
         filtros=filtros,
         pagination_args=pagination_args,
-        action_options=[
-            AuditAction.LOGIN,
-            AuditAction.LOGOUT,
-            AuditAction.LOGIN_FALHOU,
-            AuditAction.CRIAR,
-            AuditAction.EDITAR,
-            AuditAction.EXCLUIR,
-            AuditAction.VISUALIZAR,
-            AuditAction.ALTERAR_SENHA,
-            AuditAction.CRIAR_USUARIO,
-            AuditAction.ALTERAR_USUARIO,
-            AuditAction.ADICIONAR_OBSERVACAO,
-            AuditAction.EXCLUIR_OBSERVACAO,
-            AuditAction.ACESSO_NEGADO,
-            AuditAction.IMPORTAR_CREDENCIAIS,
-            "BACKUP_MANUAL",
-            "BACKUP_AUTOMATICO",
-            "VALIDAR_BACKUP",
-            "RESTAURACAO_SOLICITADA",
-            "RESTAURACAO_CONCLUIDA",
-        ],
+        action_options=_audit_log_action_options(),
+    )
+
+
+@admin_bp.route("/admin/logs-auditoria/exportar", methods=["GET"])
+@admin_required
+def audit_logs_export():
+    filtros = _audit_log_filters(request.args)
+    query = _filtered_audit_log_query(filtros)
+    logs = query.order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).all()
+
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([
+        "ID",
+        "Data/hora",
+        "Usuario",
+        "Acao",
+        "Modulo",
+        "Descricao",
+        "Alteracoes",
+        "IP",
+        "Resultado",
+    ])
+    for log in logs:
+        writer.writerow([
+            log.id,
+            to_local(log.timestamp).strftime("%d/%m/%Y %H:%M:%S") if log.timestamp else "",
+            log.usuario_identificacao or "",
+            log.acao or "",
+            log.modulo or "",
+            log.descricao or "",
+            json.dumps(log.alteracoes or {}, ensure_ascii=False, sort_keys=True),
+            log.ip_address or "",
+            log.resultado or "",
+        ])
+
+    registrar_auditoria(
+        acao=AuditAction.VISUALIZAR,
+        modulo="AdministraÃ§Ã£o",
+        entidade="AuditLog",
+        descricao="ExportaÃ§Ã£o dos logs de auditoria.",
+        alteracoes={
+            key: {"anterior": None, "novo": value}
+            for key, value in filtros.items()
+            if value and key != "per_page"
+        },
+    )
+
+    filename = f"logs_auditoria_{local_now():%Y%m%d_%H%M%S}.csv"
+    return Response(
+        output.getvalue(),
+        content_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
