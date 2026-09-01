@@ -19,9 +19,8 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import current_app
 from sqlalchemy.engine import make_url
-
 from app import db
-from app.models import BackupConfig, BackupRegistro
+from app.models import BackupConfig, BackupRegistro, IncidentAttachment
 from app.services.audit_service import AuditAction, registrar_auditoria
 from app.services.timezone_service import local_now, to_local, utc_now
 
@@ -29,6 +28,9 @@ FORMAT_VERSION = "1"
 HASH_ALGORITHM = "SHA-256"
 BACKUP_MODULE = "Administração - Backup"
 LOCK_FILE_NAME = ".divciber-backup.lock"
+PAYLOAD_ZIP_NAME = "PAYLOAD.zip"
+PAYLOAD_ENCRYPTED_NAME = "PAYLOAD.enc"
+NONCE_NAME = "NONCE.bin"
 MONTHS_PT = {
     1: "JAN",
     2: "FEV",
@@ -366,13 +368,54 @@ def _snapshot_database(temp_dir, date_code):
 
 def _iter_persistent_files():
     root = _instance_root()
-    for relative_root in ("uploads/incidents", "uploads/conscientizacoes"):
-        folder = root / relative_root
-        if not folder.exists():
+    incident_folder = (root / "uploads" / "incidents").resolve()
+    referenced_incident_files = set()
+    attachments_by_hash = {}
+    attachments = IncidentAttachment.query.filter(IncidentAttachment.deleted_at.is_(None)).order_by(
+        IncidentAttachment.incident_id.asc(),
+        IncidentAttachment.id.asc(),
+    ).all()
+    for attachment in attachments:
+        if attachment.sha256:
+            attachments_by_hash.setdefault(attachment.sha256, set()).add(attachment.incident_id)
+        raw_source = incident_folder / attachment.stored_filename
+        if raw_source.is_symlink():
             continue
-        for path in folder.rglob("*"):
-            if path.is_file() and not path.is_symlink():
-                yield relative_root, path.resolve()
+        source = raw_source.resolve()
+        if (
+            not source.is_file()
+            or incident_folder not in source.parents
+            or source in referenced_incident_files
+        ):
+            continue
+        referenced_incident_files.add(source)
+        yield f"uploads/incidents/ID{attachment.incident_id}", source
+
+    unique_incident_by_hash = {
+        file_hash: next(iter(incident_ids))
+        for file_hash, incident_ids in attachments_by_hash.items()
+        if len(incident_ids) == 1
+    }
+
+    if incident_folder.exists():
+        for path in incident_folder.rglob("*"):
+            if path.is_symlink():
+                continue
+            source = path.resolve()
+            if not source.is_file() or source.is_symlink() or source in referenced_incident_files:
+                continue
+            incident_id = unique_incident_by_hash.get(_sha256_file(source))
+            if incident_id:
+                referenced_incident_files.add(source)
+                yield f"uploads/incidents/ID{incident_id}", source
+            else:
+                yield "uploads/incidents/orfaos", source
+
+    awareness_folder = root / "uploads" / "conscientizacoes"
+    if awareness_folder.exists():
+        for path in awareness_folder.rglob("*"):
+            if not path.is_symlink() and path.is_file():
+                yield "uploads/conscientizacoes", path.resolve()
 
 
 def _collect_sources(temp_dir, date_code):
@@ -405,17 +448,15 @@ def _build_package(root, backup_type, date_code, manifest, payload_bytes):
     final_path = folder / filename
     tmp_path = folder / f".{filename}.{secrets.token_hex(8)}.tmp"
 
+    manifest["payload_storage"] = "zip"
+    manifest["payload_filename"] = PAYLOAD_ZIP_NAME
     manifest["payload_sha256"] = _sha256_bytes(payload_bytes)
-    nonce = secrets.token_bytes(12)
-    encrypted_payload = AESGCM(_encryption_key()).encrypt(nonce, payload_bytes, _manifest_aad(manifest))
-    manifest["encrypted_payload_sha256"] = _sha256_bytes(encrypted_payload)
     manifest_hmac = hmac.new(_hmac_key(), _canonical_json(manifest), hashlib.sha256).hexdigest()
 
     with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as package:
         package.writestr("MANIFESTO.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         package.writestr("MANIFESTO.hmac", manifest_hmac)
-        package.writestr("NONCE.bin", nonce)
-        package.writestr("PAYLOAD.enc", encrypted_payload)
+        package.writestr(PAYLOAD_ZIP_NAME, payload_bytes)
     with zipfile.ZipFile(tmp_path, "r") as package:
         package.testzip()
     os.replace(tmp_path, final_path)
@@ -425,11 +466,18 @@ def _build_package(root, backup_type, date_code, manifest, payload_bytes):
 def _decrypt_payload(package_path, manifest=None):
     manifest = manifest or _load_manifest_from_package(package_path)
     with zipfile.ZipFile(package_path, "r") as package:
-        nonce = package.read("NONCE.bin")
-        encrypted_payload = package.read("PAYLOAD.enc")
-    if _sha256_bytes(encrypted_payload) != manifest.get("encrypted_payload_sha256"):
+        names = set(package.namelist())
+        if PAYLOAD_ZIP_NAME in names:
+            payload = package.read(PAYLOAD_ZIP_NAME)
+        elif PAYLOAD_ENCRYPTED_NAME in names and NONCE_NAME in names:
+            nonce = package.read(NONCE_NAME)
+            encrypted_payload = package.read(PAYLOAD_ENCRYPTED_NAME)
+        else:
+            raise BackupIntegrityError("Payload do backup nÃ£o localizado.")
+    if "encrypted_payload" in locals() and _sha256_bytes(encrypted_payload) != manifest.get("encrypted_payload_sha256"):
         raise BackupIntegrityError("Checksum do payload criptografado inválido.")
-    payload = AESGCM(_encryption_key()).decrypt(nonce, encrypted_payload, _manifest_aad(manifest))
+    if "encrypted_payload" in locals():
+        payload = AESGCM(_encryption_key()).decrypt(nonce, encrypted_payload, _manifest_aad(manifest))
     if _sha256_bytes(payload) != manifest.get("payload_sha256"):
         raise BackupIntegrityError("Checksum do payload descriptografado inválido.")
     return payload
@@ -675,6 +723,26 @@ def _safe_extract_payload(payload_bytes, target):
                 shutil.copyfileobj(source, dest)
 
 
+def _restore_upload_root(source_dir, target_dir, *, flatten=False):
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if not source_dir.exists():
+        return
+    if not flatten:
+        shutil.rmtree(target_dir)
+        shutil.copytree(source_dir, target_dir)
+        return
+
+    for source_file in source_dir.rglob("*"):
+        if not source_file.is_file() or source_file.is_symlink():
+            continue
+        destination = target_dir / source_file.name
+        if destination.exists():
+            raise BackupIntegrityError("Payload contem anexos de incidentes com nomes duplicados para restauracao.")
+        shutil.copy2(source_file, destination)
+
+
 def restore_backup(record, *, confirmation, user):
     if confirmation != "RESTAURAR":
         raise BackupConfigError("Confirmação textual inválida.")
@@ -726,12 +794,7 @@ def restore_backup(record, *, confirmation, user):
                 target_dir = (instance_root / relative_root).resolve()
                 if instance_root not in target_dir.parents:
                     raise BackupIntegrityError("Diretório de restauração inválido.")
-                if target_dir.exists():
-                    shutil.rmtree(target_dir)
-                if source_dir.exists():
-                    shutil.copytree(source_dir, target_dir)
-                else:
-                    target_dir.mkdir(parents=True, exist_ok=True)
+                _restore_upload_root(source_dir, target_dir, flatten=relative_root == "uploads/incidents")
         except (BackupError, OSError, shutil.Error):
             shutil.copy2(database_backup, database_path)
             raise
@@ -833,8 +896,7 @@ def backup_status_summary():
             tipo="INCREMENTAL", status="CONCLUIDO", integridade_status="VALIDO"
         ).order_by(BackupRegistro.iniciado_em.desc()).first(),
         "running": BackupRegistro.query.filter_by(status="EM_ANDAMENTO").count() > 0,
-        "security_ready": bool(current_app.config.get("DIVCIBER_BACKUP_HMAC_KEY"))
-        and bool(current_app.config.get("DIVCIBER_BACKUP_ENCRYPTION_KEY")),
+        "security_ready": bool(current_app.config.get("DIVCIBER_BACKUP_HMAC_KEY")),
     }
 
 
