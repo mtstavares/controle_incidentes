@@ -12,6 +12,7 @@ DEPLOY_WIFI_IFACE="${DEPLOY_WIFI_IFACE:-wlp2s0b1}"
 DEPLOY_WIFI_GATEWAY="${DEPLOY_WIFI_GATEWAY:-192.168.1.1}"
 DEPLOY_WIRED_IFACE="${DEPLOY_WIRED_IFACE:-enp12s0}"
 DEPLOY_WIRED_GATEWAY="${DEPLOY_WIRED_GATEWAY:-10.44.44.1}"
+DEPLOY_INTRANET_DNS_SERVERS="${DEPLOY_INTRANET_DNS_SERVERS:-10.61.255.62 10.61.255.63}"
 DEPLOY_INTERNET_DNS="${DEPLOY_INTERNET_DNS:-nameserver 192.168.1.1
 nameserver 8.8.8.8
 nameserver 1.1.1.1}"
@@ -42,6 +43,13 @@ write_resolv_conf() {
   run_privileged sh -c "printf '%s\n' \"\$1\" > /etc/resolv.conf" sh "$content"
 }
 
+ensure_intranet_dns_routes() {
+  local dns_server
+  for dns_server in $DEPLOY_INTRANET_DNS_SERVERS; do
+    run_privileged ip route replace "${dns_server}/32" via "$DEPLOY_WIRED_GATEWAY" dev "$DEPLOY_WIRED_IFACE"
+  done
+}
+
 set_internet_network() {
   if [ "$DEPLOY_USE_WIFI" != "1" ]; then
     return
@@ -66,6 +74,7 @@ restore_intranet_network() {
 
   echo "Restaurando rota/DNS da intranet..."
   run_privileged ip route replace default via "$DEPLOY_WIRED_GATEWAY" dev "$DEPLOY_WIRED_IFACE" metric 50
+  ensure_intranet_dns_routes
   run_privileged ip route replace default via "$DEPLOY_WIFI_GATEWAY" dev "$DEPLOY_WIFI_IFACE" metric 600
   write_resolv_conf "$DEPLOY_INTRANET_DNS"
   NETWORK_RESTORE_NEEDED=0
