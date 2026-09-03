@@ -1,6 +1,6 @@
 import csv
+import html
 import io
-import json
 import re
 import threading
 import unicodedata
@@ -231,6 +231,33 @@ def _audit_log_action_options():
         "RESTAURACAO_SOLICITADA",
         "RESTAURACAO_CONCLUIDA",
     ]
+
+
+def _csv_cell(value, *, limit=1000):
+    if value is None:
+        return ""
+    text = html.unescape(str(value))
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if limit and len(text) > limit:
+        return f"{text[: limit - 3]}..."
+    return text
+
+
+def _summarize_audit_changes(changes):
+    if not changes:
+        return ""
+    parts = []
+    for field, change in sorted(changes.items()):
+        if isinstance(change, dict) and ("anterior" in change or "novo" in change):
+            before = _csv_cell(change.get("anterior"), limit=120) or "N/A"
+            after = _csv_cell(change.get("novo"), limit=120) or "N/A"
+            parts.append(f"{field}: {before} -> {after}")
+        else:
+            parts.append(f"{field}: {_csv_cell(change, limit=160)}")
+    return _csv_cell(" / ".join(parts), limit=2000)
 
 
 def _human_size(value):
@@ -966,13 +993,13 @@ def audit_logs_export():
         writer.writerow([
             log.id,
             to_local(log.timestamp).strftime("%d/%m/%Y %H:%M:%S") if log.timestamp else "",
-            log.usuario_identificacao or "",
-            log.acao or "",
-            log.modulo or "",
-            log.descricao or "",
-            json.dumps(log.alteracoes or {}, ensure_ascii=False, sort_keys=True),
-            log.ip_address or "",
-            log.resultado or "",
+            _csv_cell(log.usuario_identificacao, limit=255),
+            _csv_cell(log.acao, limit=80),
+            _csv_cell(log.modulo, limit=120),
+            _csv_cell(log.descricao, limit=500),
+            _summarize_audit_changes(log.alteracoes),
+            _csv_cell(log.ip_address, limit=45),
+            _csv_cell(log.resultado, limit=60),
         ])
 
     registrar_auditoria(

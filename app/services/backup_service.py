@@ -28,6 +28,7 @@ FORMAT_VERSION = "1"
 HASH_ALGORITHM = "SHA-256"
 BACKUP_MODULE = "Administração - Backup"
 LOCK_FILE_NAME = ".divciber-backup.lock"
+SCHEDULER_LOCK_FILE_NAME = ".divciber-backup-scheduler.lock"
 PAYLOAD_ZIP_NAME = "PAYLOAD.zip"
 PAYLOAD_ENCRYPTED_NAME = "PAYLOAD.enc"
 NONCE_NAME = "NONCE.bin"
@@ -60,6 +61,7 @@ EXCLUDED_COMPONENTS = {
 
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
+_scheduler_lock_fd = None
 
 
 class BackupError(RuntimeError):
@@ -304,6 +306,65 @@ def _filesystem_lock(root):
                 lock_path.unlink()
             except FileNotFoundError:
                 pass
+
+
+def _pid_is_running(pid):
+    if not pid or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def _read_lock_pid(lock_path):
+    try:
+        content = lock_path.read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+    try:
+        return int(content.split(maxsplit=1)[0])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _try_acquire_scheduler_lock(app):
+    lock_path = Path(app.instance_path).resolve() / SCHEDULER_LOCK_FILE_NAME
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    for _attempt in range(2):
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f"{os.getpid()} {time.time()}".encode("ascii"))
+            return fd
+        except FileExistsError:
+            pid = _read_lock_pid(lock_path)
+            if _pid_is_running(pid):
+                return None
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+    return None
+
+
+def _release_scheduler_lock(app, fd):
+    lock_path = Path(app.instance_path).resolve() / SCHEDULER_LOCK_FILE_NAME
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    if _read_lock_pid(lock_path) == os.getpid():
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _last_valid_backup():
@@ -910,22 +971,30 @@ def run_due_backup():
 
 
 def start_backup_scheduler(app):
-    global _scheduler_started
+    global _scheduler_lock_fd, _scheduler_started
     if app.testing or not app.config.get("DIVCIBER_BACKUP_SCHEDULER_ENABLED", True):
         return
     with _scheduler_lock:
         if _scheduler_started:
             return
+        fd = _try_acquire_scheduler_lock(app)
+        if fd is None:
+            app.logger.info("Agendador de backup DivCiber ja esta ativo em outro worker.")
+            return
+        _scheduler_lock_fd = fd
         _scheduler_started = True
 
     def _loop():
-        with app.app_context():
-            while True:
-                try:
-                    run_due_backup()
-                except (BackupError, OSError, sqlite3.Error, ValueError, zipfile.BadZipFile, InvalidTag) as exc:
-                    app.logger.warning("Falha no agendador de backup DivCiber: %s", _sanitize_error(exc))
-                time.sleep(60)
+        try:
+            with app.app_context():
+                while True:
+                    try:
+                        run_due_backup()
+                    except (BackupError, OSError, sqlite3.Error, ValueError, zipfile.BadZipFile, InvalidTag) as exc:
+                        app.logger.warning("Falha no agendador de backup DivCiber: %s", _sanitize_error(exc))
+                    time.sleep(60)
+        finally:
+            _release_scheduler_lock(app, fd)
 
     thread = threading.Thread(target=_loop, name="divciber-backup-scheduler", daemon=True)
     thread.start()

@@ -182,6 +182,34 @@ class BackupPlainPayloadTest(unittest.TestCase):
         self.assertTrue((target / "stored-2.pdf").is_file())
         self.assertFalse((target / "ID100").exists())
 
+    def test_scheduler_lock_allows_only_one_process_leader(self):
+        app = type("App", (), {"instance_path": str(self.root / "instance-lock")})()
+
+        first_fd = backup_service._try_acquire_scheduler_lock(app)
+        self.assertIsNotNone(first_fd)
+        try:
+            second_fd = backup_service._try_acquire_scheduler_lock(app)
+            self.assertIsNone(second_fd)
+        finally:
+            backup_service._release_scheduler_lock(app, first_fd)
+
+        third_fd = backup_service._try_acquire_scheduler_lock(app)
+        self.assertIsNotNone(third_fd)
+        backup_service._release_scheduler_lock(app, third_fd)
+
+    def test_scheduler_lock_replaces_stale_pid_file(self):
+        app = type("App", (), {"instance_path": str(self.root / "instance-stale-lock")})()
+        lock_path = Path(app.instance_path) / backup_service.SCHEDULER_LOCK_FILE_NAME
+        lock_path.parent.mkdir(parents=True)
+        lock_path.write_text("999999999 0", encoding="ascii")
+
+        with patch.object(backup_service, "_pid_is_running", return_value=False):
+            fd = backup_service._try_acquire_scheduler_lock(app)
+
+        self.assertIsNotNone(fd)
+        backup_service._release_scheduler_lock(app, fd)
+        self.assertFalse(lock_path.exists())
+
     def test_legacy_encrypted_payload_still_reads(self):
         payload_bytes = b"legacy payload bytes"
         manifest = {
